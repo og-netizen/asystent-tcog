@@ -55,10 +55,18 @@ export function createApp(env,upstream=readWfirma){
  const clientId='asystent-tcog';
  const callbacks=new Set((env.OAUTH_REDIRECT_URIS||'https://chatgpt.com/connector_platform/oauth_redirect,https://chat.openai.com/aip/plugin/oauth/callback').split(',').map(s=>s.trim()));
  for(const uri of callbacks){const u=new URL(uri);if(u.protocol!=='https:'||u.username||u.password||u.hash)throw Error('Niepoprawny adres zwrotny OAuth');}
- const pending=new Map(),codes=new Map(); let attempts=[];
- const clean=()=>{for(const map of [pending,codes])for(const [k,v]of map)if(v.exp<Date.now())map.delete(k);};
+ const codes=new Map(); let attempts=[];
+ const clean=()=>{for(const map of [codes])for(const [k,v]of map)if(v.exp<Date.now())map.delete(k);};
  function sign(data){const value=Buffer.from(JSON.stringify(data)).toString('base64url');return value+'.'+createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(value).digest('base64url');}
  function verify(token){try{const [v,s,...rest]=token.split('.');if(rest.length||!v||!s||!equal(s,createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(v).digest('base64url')))return null;const d=JSON.parse(Buffer.from(v,'base64url'));return d.exp>Date.now()&&d.aud===audience&&d.scope===scope&&d.sub===config.company?d:null;}catch{return null;}}
+ // Signed login forms survive restarts; a separate cookie still binds the browser.
+ function openFlow(ticket){try{
+  if(typeof ticket!=='string'||ticket.length>8000)return null;
+  const [v,s,...rest]=ticket.split('.');
+  if(rest.length||!v||!s||!equal(s,createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(v).digest('base64url')))return null;
+  const d=JSON.parse(Buffer.from(v,'base64url'));
+  return d.kind==='login'&&d.aud===origin&&d.exp>Date.now()&&d.exp<=Date.now()+900000&&d.client_id===clientId&&callbacks.has(d.redirect_uri)&&typeof d.nonce==='string'?d:null;
+ }catch{return null;}}
  const json=(res,status,obj,headers={})=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8',...headers});res.end(JSON.stringify(obj));};
  async function body(req){let data='',size=0;for await(const chunk of req){size+=chunk.length;if(size>16384)throw Error('body');data+=chunk;}return data;}
  const metadata={issuer:origin,authorization_endpoint:origin+'/authorize',token_endpoint:origin+'/token',response_types_supported:['code'],grant_types_supported:['authorization_code'],token_endpoint_auth_methods_supported:['client_secret_post','client_secret_basic'],code_challenge_methods_supported:['S256'],scopes_supported:[scope]};
@@ -74,23 +82,23 @@ export function createApp(env,upstream=readWfirma){
    if(path==='/authorize'&&req.method==='GET'){
     const q=Object.fromEntries(url.searchParams);
     if(q.client_id!==clientId||!callbacks.has(q.redirect_uri)||q.response_type!=='code'||q.code_challenge_method!=='S256'||!/^[A-Za-z0-9_-]{43}$/.test(q.code_challenge||'')||(q.scope&&q.scope!==scope)||(q.resource&&q.resource!==audience))return json(res,400,{error:'invalid_request',hint:'Sprawdź Client ID, adres zwrotny, scope oraz PKCE S256.'});
-    if(pending.size>=100)return json(res,429,{error:'too_many_requests'});
-    const ticket=random();pending.set(ticket,{...q,exp:Date.now()+300000});
-    res.setHeader('Set-Cookie',`tcog_auth=${ticket}; HttpOnly; Secure; SameSite=Lax; Path=/authorize; Max-Age=300`);
+    const nonce=random();
+    const ticket=sign({...q,kind:'login',aud:origin,nonce,exp:Date.now()+900000});
+    res.setHeader('Set-Cookie',`tcog_auth=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/authorize; Max-Age=900`);
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
     return res.end(`<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Asystent TCOG — połączenie</title><h1>Połącz Asystenta TCOG</h1><p>Zezwalasz ChatGPT na odczyt danych firmy ${esc(config.company)} w wFirmie: faktur, wydatków, płatności i kontrahentów.</p><p>Ta wersja nie zmienia danych i nie wykonuje przelewów.</p><form method="post" action="/authorize"><input type="hidden" name="ticket" value="${ticket}"><label>Hasło integracji (ADMIN_PASSWORD, nie hasło wFirmy): <input type="password" name="password" required autocomplete="current-password"></label><button type="submit">Zezwól na odczyt</button></form><p>Możesz anulować, zamykając okno.</p></html>`);
    }
    if(path==='/authorize'&&req.method==='POST'){
     const q=Object.fromEntries(new URLSearchParams(await body(req)));
-    const ticket=q.ticket,flow=pending.get(ticket);
+    const ticket=q.ticket,flow=openFlow(ticket);
     const cookie=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('tcog_auth='))?.slice(10);
-    if(!flow)return json(res,400,{error:'session_expired'});
-if(!cookie)return json(res,400,{error:'cookie_missing'});
-if(!equal(cookie,ticket))return json(res,400,{error:'cookie_mismatch'});
+    if(!flow)return json(res,400,{error:'session_expired_or_invalid'});
+    if(!cookie)return json(res,400,{error:'cookie_missing'});
+    if(!equal(cookie,flow.nonce))return json(res,400,{error:'cookie_mismatch'});
     attempts=attempts.filter(t=>t>Date.now()-900000);
     if(attempts.length>=10)return json(res,429,{error:'Odczekaj 15 minut przed kolejną próbą.'});
     if(!equal(q.password||'',env.ADMIN_PASSWORD)){attempts.push(Date.now());return json(res,403,{error:'Niepoprawne hasło integracji. Wróć i spróbuj ponownie.'});}
-    pending.delete(ticket);const code=random();codes.set(code,{...flow,exp:Date.now()+60000});
+    const code=random();codes.set(code,{...flow,exp:Date.now()+60000});
     const target=new URL(flow.redirect_uri);target.searchParams.set('code',code);if(flow.state)target.searchParams.set('state',flow.state);
     res.writeHead(303,{Location:target.href,'Set-Cookie':'tcog_auth=; HttpOnly; Secure; SameSite=Lax; Path=/authorize; Max-Age=0'});return res.end();
    }
