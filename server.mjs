@@ -84,7 +84,9 @@ export function createApp(env,upstream=readWfirma){
     const q=Object.fromEntries(new URLSearchParams(await body(req)));
     const ticket=q.ticket,flow=pending.get(ticket);
     const cookie=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('tcog_auth='))?.slice(10);
-    if(!flow||!cookie||!equal(cookie,ticket))return json(res,400,{error:'invalid_session'});
+    if(!flow)return json(res,400,{error:'session_expired'});
+if(!cookie)return json(res,400,{error:'cookie_missing'});
+if(!equal(cookie,ticket))return json(res,400,{error:'cookie_mismatch'});
     attempts=attempts.filter(t=>t>Date.now()-900000);
     if(attempts.length>=10)return json(res,429,{error:'Odczekaj 15 minut przed kolejną próbą.'});
     if(!equal(q.password||'',env.ADMIN_PASSWORD)){attempts.push(Date.now());return json(res,403,{error:'Niepoprawne hasło integracji. Wróć i spróbuj ponownie.'});}
