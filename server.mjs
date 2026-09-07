@@ -72,7 +72,7 @@ export function createApp(env,upstream=readWfirma){
  const metadata={issuer:origin,authorization_endpoint:origin+'/authorize',token_endpoint:origin+'/token',response_types_supported:['code'],grant_types_supported:['authorization_code'],token_endpoint_auth_methods_supported:['client_secret_post','client_secret_basic'],code_challenge_methods_supported:['S256'],scopes_supported:[scope]};
  return http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
-  res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader('Content-Security-Policy',`default-src 'none'; form-action 'self' ${[...new Set([...callbacks].map(uri=>new URL(uri).origin))].join(' ')}; frame-ancestors 'none'; base-uri 'none'`);
   try{
    clean();const url=new URL(req.url,origin),path=url.pathname;
    if(req.headers.origin&&![origin,'https://chatgpt.com','https://chat.openai.com'].includes(req.headers.origin))return json(res,403,{error:'origin_not_allowed'});
