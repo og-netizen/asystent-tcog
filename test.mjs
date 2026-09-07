@@ -16,10 +16,10 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
   const verifier='v'.repeat(64),challenge=createHash('sha256').update(verifier).digest('base64url');
   const params=new URLSearchParams({client_id:'asystent-tcog',redirect_uri:'https://chatgpt.com/connector_platform/oauth_redirect',response_type:'code',scope:'wfirma:read',code_challenge:challenge,code_challenge_method:'S256',state:'abc'});
   const bad=new URLSearchParams(params);bad.set('redirect_uri','https://evil.example');assert.equal((await req('/authorize?'+bad)).status,400);
-  const page=await req('/authorize?'+params);assert.equal(page.status,200);const html=await page.text();const ticket=html.match(/name="ticket" value="([^"]+)"/)[1];
+  const page=await req('/authorize?'+params);assert.equal(page.status,200);assert.equal(page.headers.get('referrer-policy'),'same-origin');const html=await page.text();const ticket=html.match(/name="ticket" value="([^"]+)"/)[1];
   const cookie=page.headers.get('set-cookie').split(';')[0];
   assert.equal((await req('/authorize',{method:'POST',body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})})).status,400);
-  const auth=await req('/authorize',{method:'POST',headers:{Cookie:cookie},body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})});assert.equal(auth.status,303);
+  const auth=await req('/authorize',{method:'POST',headers:{Cookie:cookie,Origin:env.PUBLIC_URL},body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})});assert.equal(auth.status,303);
   const back=new URL(auth.headers.get('location'));assert.equal(back.searchParams.get('state'),'abc');
   const tokenParams={grant_type:'authorization_code',client_id:'asystent-tcog',client_secret:env.OAUTH_CLIENT_SECRET,redirect_uri:params.get('redirect_uri'),code:back.searchParams.get('code'),code_verifier:verifier};
   assert.equal((await req('/token',{method:'POST',body:new URLSearchParams({...tokenParams,code_verifier:'bad'})})).status,400);
@@ -36,3 +36,19 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 test('Fails closed when required configuration is absent',()=>{assert.throws(()=>createApp({}));});
+test('Signed form survives a new server process state; tampering and missing cookie are rejected',async()=>{
+ const env={NODE_ENV:'test',PUBLIC_URL:'http://127.0.0.1',ADMIN_PASSWORD:'a'.repeat(40),OAUTH_CLIENT_SECRET:'s'.repeat(40),WFIRMA_COMPANY_ID:'1785731',WFIRMA_ACCESS_KEY:'fake',WFIRMA_SECRET_KEY:'fake',WFIRMA_APP_KEY:'fake'};
+ const servers=[createApp(env),createApp(env)];
+ for(const s of servers)await new Promise(r=>s.listen(0,'127.0.0.1',r));
+ const bases=servers.map(s=>'http://127.0.0.1:'+s.address().port);
+ try{
+  const q=new URLSearchParams({client_id:'asystent-tcog',redirect_uri:'https://chatgpt.com/connector_platform/oauth_redirect',response_type:'code',code_challenge:'a'.repeat(43),code_challenge_method:'S256'});
+  const r=await fetch(bases[0]+'/authorize?'+q);const html=await r.text();
+  const ticket=html.match(/name="ticket" value="([^"]+)"/)[1];const cookie=r.headers.get('set-cookie').split(';')[0];
+  const post=(t,c)=>fetch(bases[1]+'/authorize',{method:'POST',redirect:'manual',headers:{Origin:env.PUBLIC_URL,...(c?{Cookie:c}:{})},body:new URLSearchParams({ticket:t,password:env.ADMIN_PASSWORD})});
+  assert.equal((await post(ticket+'tamper',cookie)).status,400);
+  assert.equal((await post(ticket,undefined)).status,400);
+  assert.equal((await post(ticket,'tcog_auth=wrong')).status,400);
+  assert.equal((await post(ticket,cookie)).status,303);
+ }finally{for(const s of servers){s.closeAllConnections();await new Promise(r=>s.close(r));}}
+});
