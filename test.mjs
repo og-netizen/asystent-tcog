@@ -18,7 +18,7 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
   const bad=new URLSearchParams(params);bad.set('redirect_uri','https://evil.example');assert.equal((await req('/authorize?'+bad)).status,400);
   const page=await req('/authorize?'+params);assert.equal(page.status,200);assert.equal(page.headers.get('referrer-policy'),'same-origin');const html=await page.text();const ticket=html.match(/name="ticket" value="([^"]+)"/)[1];
   const cookie=page.headers.get('set-cookie').split(';')[0];
-  assert.equal((await req('/authorize',{method:'POST',body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})})).status,400);
+  assert.equal((await req('/authorize',{method:'POST',body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})})).status,200);
   const auth=await req('/authorize',{method:'POST',headers:{Cookie:cookie,Origin:env.PUBLIC_URL},body:new URLSearchParams({ticket,password:env.ADMIN_PASSWORD})});assert.equal(auth.status,303);
   const back=new URL(auth.headers.get('location'));assert.equal(back.searchParams.get('state'),'abc');
   const tokenParams={grant_type:'authorization_code',client_id:'asystent-tcog',client_secret:env.OAUTH_CLIENT_SECRET,redirect_uri:params.get('redirect_uri'),code:back.searchParams.get('code'),code_verifier:verifier};
@@ -37,7 +37,7 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 test('Fails closed when required configuration is absent',()=>{assert.throws(()=>createApp({}));});
-test('Signed form survives a new server process state; tampering and missing cookie are rejected',async()=>{
+test('Signed form survives restart; missing cookie is rebound and must be returned; tampering is rejected',async()=>{
  const env={NODE_ENV:'test',PUBLIC_URL:'http://127.0.0.1',ADMIN_PASSWORD:'a'.repeat(40),OAUTH_CLIENT_SECRET:'s'.repeat(40),WFIRMA_COMPANY_ID:'1785731',WFIRMA_ACCESS_KEY:'fake',WFIRMA_SECRET_KEY:'fake',WFIRMA_APP_KEY:'fake'};
  const servers=[createApp(env),createApp(env)];
  for(const s of servers)await new Promise(r=>s.listen(0,'127.0.0.1',r));
@@ -48,7 +48,15 @@ test('Signed form survives a new server process state; tampering and missing coo
   const ticket=html.match(/name="ticket" value="([^"]+)"/)[1];const cookie=r.headers.get('set-cookie').split(';')[0];
   const post=(t,c)=>fetch(bases[1]+'/authorize',{method:'POST',redirect:'manual',headers:{Origin:env.PUBLIC_URL,...(c?{Cookie:c}:{})},body:new URLSearchParams({ticket:t,password:env.ADMIN_PASSWORD})});
   assert.equal((await post(ticket+'tamper',cookie)).status,400);
-  assert.equal((await post(ticket,undefined)).status,400);
+  const recovered=await post(ticket,undefined);assert.equal(recovered.status,200);
+  assert.equal(recovered.headers.get('location'),null);
+  const recoveredHtml=await recovered.text();assert.equal(recoveredHtml.includes(env.ADMIN_PASSWORD),false);
+  const renewedTicket=recoveredHtml.match(/name="ticket" value="([^"]+)"/)[1];
+  const renewedCookie=recovered.headers.get('set-cookie').split(';')[0];
+  assert.notEqual(renewedCookie,cookie);assert.notEqual(renewedTicket,ticket);
+  assert.equal((await post(renewedTicket,undefined)).status,400);
+  assert.equal((await post(renewedTicket,cookie)).status,400);
+  assert.equal((await post(renewedTicket,renewedCookie)).status,303);
   assert.equal((await post(ticket,'tcog_auth=wrong')).status,400);
   assert.equal((await post(ticket,cookie)).status,303);
  }finally{for(const s of servers){s.closeAllConnections();await new Promise(r=>s.close(r));}}
