@@ -67,5 +67,16 @@ test('Authenticated pilot persists one vehicle and sync cursor across restart',a
   assert.equal((await request('state')).status,401);
   const again=await request('login',{password:env.PILOT_PASSWORD});cookie=again.headers.get('set-cookie').split(';')[0];
   const persisted=await (await request('state')).json();assert.equal(persisted.orders[0].cursor,saved.orders[0].cursor);assert.equal(persisted.vehicle.device_id,'car1');
+  const id=persisted.orders[0].id;
+  let edited=await request('orders/edit',{...o,id,reference:'ZMIANA'});assert.equal(edited.status,200);
+  let result=await edited.json();assert.equal(result.orders[0].reference,'ZMIANA');assert.equal(result.orders[0].analysis.sample_count,1);
+  assert.equal((await request('orders/edit',{...o,id,load:{...o.load,lat:200}})).status,400);
+  assert.equal((await (await request('state')).json()).orders[0].reference,'ZMIANA');
+  edited=await request('orders/edit',{...o,id,start:new Date(Date.parse(o.start)+60000).toISOString()});result=await edited.json();
+  assert.equal(result.orders[0].analysis.sample_count,0);assert.equal(result.orders[0].cursor,Date.parse(o.start)+60000-7200000);
+  assert.equal((await request('orders/delete',{id:'missing'})).status,400);
+  assert.equal((await request('orders/delete',{id})).status,200);
+  assert.equal((await (await request('export')).json()).orders.length,0);
+
  }finally{if(app)await app.close();await rm(dir,{recursive:true,force:true});}
 });

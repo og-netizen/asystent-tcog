@@ -85,6 +85,16 @@ export async function createPilot(env,client=createDbk(env)){
      if(!state.vehicle)throw Error('Najpierw wybierz auto.');if(state.orders.length>=100)throw Error('Limit pilotażu: 100 zleceń.');
      const o=validateOrder(input);if(state.orders.some(x=>Date.parse(o.start)<=Date.parse(x.end)&&Date.parse(o.end)>=Date.parse(x.start)))throw Error('Terminy nakładają się na zapisane zlecenie.');
      state.orders.push({...o,id:randomBytes(12).toString('hex'),samples:[],cursor:Date.parse(o.start)-7200000,lastSync:null,emptyWindows:0,paused:false});
+    }else if(pathname==='/api/orders/edit'){
+     const previous=state.orders.find(o=>o.id===input.id);if(!previous)throw Error('Nie znaleziono zlecenia. Odśwież panel.');
+     const updated=validateOrder(input);
+     if(state.orders.some(x=>x.id!==previous.id&&Date.parse(updated.start)<=Date.parse(x.end)&&Date.parse(updated.end)>=Date.parse(x.start)))throw Error('Terminy nakładają się na inne zlecenie.');
+     const changedDates=updated.start!==previous.start||updated.end!==previous.end;
+     Object.assign(previous,updated);
+     if(changedDates)Object.assign(previous,{samples:[],cursor:Date.parse(updated.start)-7200000,lastSync:null,emptyWindows:0});
+    }else if(pathname==='/api/orders/delete'){
+     const index=state.orders.findIndex(o=>o.id===input.id);if(index<0)throw Error('Nie znaleziono zlecenia. Odśwież panel.');
+     state.orders.splice(index,1);
     }else if(pathname==='/api/pause'){
      const o=state.orders.find(o=>o.id===input.id);if(!o||typeof input.paused!=='boolean')throw Error('Niepoprawne zlecenie.');o.paused=input.paused;
     }else return json(404,{error:'Nie znaleziono.'});
