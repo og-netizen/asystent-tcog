@@ -55,7 +55,7 @@ export async function createPilot(env,client=createDbk(env)){
    // Custom header and exact Origin check prevent cross-site form submissions.
    if(req.headers['x-tcog-pilot']!=='1')return json(403,{error:'Niedozwolone żądanie.'});
    if(env.PILOT_ORIGIN&&req.headers.origin&&req.headers.origin!==env.PILOT_ORIGIN)return json(403,{error:'Niedozwolony adres strony.'});
-   let input={};if(req.method==='POST'){let body='';for await(const c of req){body+=c;if(Buffer.byteLength(body)>12000)return json(413,{error:'Za duże żądanie.'});}input=JSON.parse(body||'{}');}
+   let input={};if(req.method==='POST'){let body='';for await(const c of req){body+=c;if(Buffer.byteLength(body)>(pathname==='/api/import'?2000000:12000))return json(413,{error:'Za duże żądanie.'});}input=JSON.parse(body||'{}');}
    if(pathname==='/api/login'&&req.method==='POST'){
     attempts=attempts.filter(t=>Date.now()-t<600000);if(attempts.length>=10)return json(429,{error:'Zbyt wiele prób. Spróbuj za 10 minut.'});
     if(typeof input.password!=='string'||!equal(input.password,env.PILOT_PASSWORD)){attempts.push(Date.now());return json(401,{error:'Niepoprawne hasło panelu.'});}
@@ -81,6 +81,21 @@ export async function createPilot(env,client=createDbk(env)){
     if(pathname==='/api/vehicle'){
      if(state.orders.length)throw Error('W pilotażu auto jest stałe po zapisaniu pierwszego zlecenia.');
      const v=vehiclesCache?.find(v=>v.device_id===input.device_id);if(!v)throw Error('Najpierw pobierz listę aut i wybierz pojazd.');state.vehicle=v;
+    }else if(pathname==='/api/import'){
+     if(!state.vehicle||input.vehicle?.device_id!==state.vehicle.device_id)throw Error('Wybierz najpierw auto zgodne z kopią danych.');
+     if(state.orders.length)throw Error('Import jest dostępny w pustym panelu. Usuń zlecenia lub użyj nowej sesji po restarcie.');
+     if(input.version!==1||!Array.isArray(input.orders)||input.orders.length!==1)throw Error('W teście importujemy kopię z jednym zleceniem.');
+     const raw=input.orders[0],o=validateOrder(raw),lo=Date.parse(o.start)-7200000,hi=Date.parse(o.end)+7200000;
+     if(!Array.isArray(raw.samples)||raw.samples.length>10000)throw Error('Niepoprawna liczba próbek.');
+     const samples=mergeSamples([],raw.samples.map(s=>{
+      const t=Date.parse(s.date);if(!Number.isFinite(t)||t<lo||t>hi)throw Error('Próbka spoza okresu zlecenia.');
+      const row={date:new Date(t).toISOString()};
+      for(const k of ['lat','lng','speed','odometer_can_km','odometer_gps_km','total_fuel_can_l']){if(s[k]!=null&&(typeof s[k]!=='number'||!Number.isFinite(s[k])))throw Error('Niepoprawne pomiary w kopii.');row[k]=s[k]??null;}
+      if(row.lat!==null&&Math.abs(row.lat)>90||row.lng!==null&&Math.abs(row.lng)>180)throw Error('Niepoprawne współrzędne w kopii.');
+      return row;
+     }));
+     const cursor=typeof raw.cursor==='number'&&Number.isFinite(raw.cursor)?Math.max(lo,Math.min(raw.cursor,hi,Date.now())):lo;
+     state.orders.push({...o,id:randomBytes(12).toString('hex'),samples,cursor,lastSync:null,emptyWindows:Number.isInteger(raw.emptyWindows)&&raw.emptyWindows>=0?Math.min(raw.emptyWindows,10000):0,paused:true});
     }else if(pathname==='/api/orders'){
      if(!state.vehicle)throw Error('Najpierw wybierz auto.');if(state.orders.length>=100)throw Error('Limit pilotażu: 100 zleceń.');
      const o=validateOrder(input);if(state.orders.some(x=>Date.parse(o.start)<=Date.parse(x.end)&&Date.parse(o.end)>=Date.parse(x.start)))throw Error('Terminy nakładają się na zapisane zlecenie.');

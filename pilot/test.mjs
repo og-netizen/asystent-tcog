@@ -31,7 +31,7 @@ test('Detect stops, use departure odometer and deduplicate overlapping windows',
 });
 test('Passing the warehouse and sparse observations do not confirm a visit',()=>{
  assert.equal(analyse({...order,samples:[sample(0,52,100),sample(1,52.1,101)]}).load,null);
- assert.equal(analyse({...order,samples:[sample(0,52,100),sample(30,52,100)]}).load,null);
+ assert.equal(analyse({...order,samples:[{...sample(0,52,100),odometer_can_km:null},{...sample(30,52,100),odometer_can_km:null}]}).load,null);
 });
 test('Gap after confirmed stop cannot create a precise departure; reset odometer is not distance',()=>{
  const a=analyse({...order,samples:[sample(0,52,100),sample(5,52,100),sample(30,53,200)]});
@@ -77,6 +77,15 @@ test('Authenticated pilot persists one vehicle and sync cursor across restart',a
   assert.equal((await request('orders/delete',{id:'missing'})).status,400);
   assert.equal((await request('orders/delete',{id})).status,200);
   assert.equal((await (await request('export')).json()).orders.length,0);
+  const restored=await request('import',saved);assert.equal(restored.status,200);const restoredState=await restored.json();assert.equal(restoredState.orders[0].analysis.sample_count,1);assert.equal(restoredState.orders[0].paused,true);
+  assert.equal((await request('import',saved)).status,400);
+
 
  }finally{if(app)await app.close();await rm(dir,{recursive:true,force:true});}
+});
+
+test('Sparse stationary samples require matching odometer and position',()=>{
+ const a=analyse({...order,samples:[sample(0,52,100),sample(25,52,100),sample(26,52.01,101),sample(32,53,200),sample(37,53,200)]});
+ assert.equal(a.km,99);assert.equal(a.load.inferred,true);
+ const b=analyse({...order,samples:[sample(0,52,100),sample(25,52,140),sample(26,52.01,141)]});assert.equal(b.load,null);
 });

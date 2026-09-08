@@ -26,3 +26,6 @@ $('orders').onclick=e=>action(async()=>{const edit=e.target.closest('[data-edit]
 $('timezone').textContent='Terminy wpisujesz w strefie przeglądarki: '+Intl.DateTimeFormat().resolvedOptions().timeZone+'. Podgląd i plan pokazują czas Polski.';
 api('state').then(render).catch(()=>showLogin());
 setInterval(()=>{if(current&&!document.hidden)api('state').then(render).catch(e=>{$('notice').textContent=e.message;});},15000);
+
+$('import').onclick=()=>{if(!current?.vehicle){$('notice').textContent='Najpierw wybierz auto z DBK zgodne z kopią.';return;}$('importFile').click();};
+$('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0];if(!file)return;try{if(file.size>2000000)throw Error('Kopia może mieć najwyżej 2 MB.');render(await api('import',JSON.parse(await file.text())));resetEditor();$('notice').textContent='Wczytano zlecenie i próbki. Wynik przeliczono bez pobierania DBK. Pobieranie jest wstrzymane.';}finally{$('importFile').value='';}});

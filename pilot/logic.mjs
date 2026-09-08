@@ -17,21 +17,40 @@ export function mergeSamples(old,added){
  const map=new Map();for(const s of [...old,...added])if(Number.isFinite(Date.parse(s.date)))map.set(new Date(s.date).toISOString(),{...s,date:new Date(s.date).toISOString()});
  return [...map.values()].sort((a,b)=>Date.parse(a.date)-Date.parse(b.date));
 }
-// A visit needs two low-speed samples at least five minutes apart. A gap
-// over ten minutes breaks evidence; an outside sample establishes departure.
-function visit(rows,stop,after){
- let first=null,last=null,confirmed=false;
- for(const s of rows){
-  const t=Date.parse(s.date);if(t<after)continue;
-  if(!finite(s.lat)||!finite(s.lng))continue;
-  const inside=metres(s,stop)<=stop.radius;
-  if(first&&t-Date.parse(last.date)>600000){if(confirmed)return {arrival:first,departure:null,uncertain:true};first=null;last=null;}
-  if(!inside){if(confirmed)return {arrival:first,departure:s,uncertain:false};first=null;last=null;continue;}
-  if(finite(s.speed)&&s.speed<=3){first??=s;last=s;if(t-Date.parse(first.date)>=300000)confirmed=true;}
-  else if(!confirmed){first=null;last=null;}
-  else last=s;
+// Sparse stationary telemetry is evidence only when both position and a
+// monotonic odometer agree. Never infer a stop from a missing window alone.
+function stationary(a,b){
+ if(metres(a,b)>100)return false;
+ for(const k of ['odometer_can_km','odometer_gps_km']){
+  if(finite(a[k])&&finite(b[k]))return b[k]>=a[k]&&b[k]-a[k]<=0.11;
  }
- return confirmed?{arrival:first,departure:null,uncertain:false}:null;
+ return false;
+}
+function visits(rows,stop,after){
+ const found=[];let first=null,last=null,anchor=null,confirmed=false,inferred=false;
+ const clear=()=>{first=null;last=null;anchor=null;confirmed=false;inferred=false;};
+ for(const s of rows){
+  const t=Date.parse(s.date);if(t<after||!finite(s.lat)||!finite(s.lng))continue;
+  const inside=metres(s,stop)<=stop.radius;
+  if(last&&t-Date.parse(last.date)>600000){
+   if(inside&&t-Date.parse(last.date)<=2*HOUR&&stationary(last,s)){inferred=true;}
+   else {if(confirmed)found.push({arrival:first,departure:null,uncertain:true,inferred});clear();}
+  }
+  if(!inside){if(confirmed)found.push({arrival:first,departure:s,uncertain:false,inferred});clear();continue;}
+  const slow=finite(s.speed)&&s.speed<=3;
+  if(!first&&slow){first=s;anchor=s;}
+  if(anchor){
+   if(stationary(anchor,s)){
+    if(t-Date.parse(anchor.date)>=300000){confirmed=true;inferred=true;}
+   }else if(slow){anchor=s;}else {anchor=null;if(!confirmed)first=null;}
+  }else if(slow){anchor=s;first??=s;}
+  // Dense low-speed evidence remains valid even without an odometer.
+  if(first&&slow&&!confirmed&&last&&t-Date.parse(last.date)<=600000&&t-Date.parse(first.date)>=300000)confirmed=true;
+  if(!slow&&!confirmed&&!anchor)first=null;
+  last=s;
+ }
+ if(confirmed)found.push({arrival:first,departure:null,uncertain:false,inferred});
+ return found;
 }
 function delta(a,b,key){
  if(!a||!b||!finite(a[key])||!finite(b[key]))return null;
@@ -39,8 +58,13 @@ function delta(a,b,key){
 }
 export function analyse(order){
  const rows=mergeSamples([],order.samples||[]),warnings=[];
- const load=visit(rows,order.load,Date.parse(order.start)-2*HOUR);
- const unload=load?.departure?visit(rows,order.unload,Date.parse(load.departure.date)):null;
+ const loads=visits(rows,order.load,Date.parse(order.start)-2*HOUR);
+ const unloads=visits(rows,order.unload,Date.parse(order.start));
+ const unload=unloads.find(u=>loads.some(l=>l.departure&&Date.parse(l.departure.date)<Date.parse(u.arrival.date)))??null;
+ const eligible=unload?loads.filter(l=>l.departure&&Date.parse(l.departure.date)<Date.parse(unload.arrival.date)):loads;
+ const load=eligible.at(-1)??null;
+ if(eligible.length>1)warnings.push('Wykryto kilka postojów przy załadunku. Wstępnie wybrano ostatni przed rozładunkiem — wymaga potwierdzenia przez dispo.');
+ if(load?.inferred||unload?.inferred)warnings.push('Postój oszacowano z pozycji i niemal niezmiennego licznika, także między rzadkimi próbkami. Wynik wstępny.');
  const a=load?.departure,b=unload?.arrival;
  let source='CAN',km=delta(a,b,'odometer_can_km');
  if(km===null){source='GPS';km=delta(a,b,'odometer_gps_km');}

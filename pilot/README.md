@@ -4,7 +4,7 @@
 
 `npm start` uruchamia teraz `pilot/free-start.mjs`: panel i dotychczasowe trasy MCP/OAuth na tym samym serwerze. Panel używa istniejącego `ADMIN_PASSWORD`. Nie wpisuj kluczy DBK w formularzu. Żadne dodatkowe zmienne ani płatne zasoby nie są wymagane.
 
-To jawny tryb tymczasowy: każde uruchomienie tworzy nowy pusty katalog, bez odzyskiwania zleceń z poprzedniego procesu. Nie ma automatycznego pobierania ani diagnostyki startowej DBK. Po zapisaniu zlecenia przycisk pobiera jeden odcinek do godziny historii. Przed zakończeniem testu pobierz kopię JSON na komputer. Uśpienie lub restart kasuje dane testu; nie kasuje historii źródłowej DBK. Eksport służy archiwizacji — import kopii nie jest jeszcze zaimplementowany.
+To jawny tryb tymczasowy: każde uruchomienie tworzy nowy pusty katalog, bez odzyskiwania zleceń z poprzedniego procesu. Nie ma automatycznego pobierania ani diagnostyki startowej DBK. Po zapisaniu zlecenia przycisk pobiera jeden odcinek do godziny historii. Przed zakończeniem testu pobierz kopię JSON na komputer. Uśpienie lub restart kasuje dane testu; nie kasuje historii źródłowej DBK. Wczytaj kopię JSON odtwarza jedno zlecenie i próbki w pustym panelu po wyborze zgodnego auta DBK. Import przelicza dane lokalnie i wstrzymuje pobieranie.
 
 Poniższe instrukcje trwałego wdrożenia i automatycznej synchronizacji dotyczą osobnych `pilot/server.mjs` i `pilot/start.mjs`, nie aktualnego testowego `npm start`.
 
@@ -16,7 +16,7 @@ Gotowy formularz i proces pobierający historię DBK. Wykorzystuje istniejący a
 - Wybór jednego uprawnionego auta, potem stałe przypisanie.
 - Formularz: numer, przychód i waluta, dwa adresy, współrzędne placów, promienie, planowane terminy.
 - Pobieranie jednej godziny historii na minutę, z 15-minutowym nakładaniem i usuwaniem duplikatów. Początek śledzenia dwie godziny przed załadunkiem, koniec dwie godziny po planowanym rozładunku. Serwer musi działać bez usypiania.
-- Postój wymaga przynajmniej dwóch próbek z prędkością ≤3 km/h obejmujących ≥5 minut. Przerwa >10 minut przerywa dowód ciągłości. Wykrycie jest szacunkiem obecności w strefie, nie potwierdzeniem wykonania załadunku.
+- Postój wymaga przynajmniej dwóch próbek z prędkością ≤3 km/h obejmujących ≥5 minut. Przerwa >10 minut przerywa dowód ciągłości, chyba że trwa do 2 godzin, pozycja zmieniła się o najwyżej 100 m, a porównywalny licznik wzrósł o najwyżej 0,11 km. Taki postój jest oznaczony jako oszacowanie. Przy kilku postojach załadunkowych program wstępnie wybiera ostatni przed rozładunkiem i wymaga sprawdzenia przez dispo. Wykrycie jest szacunkiem obecności w strefie, nie potwierdzeniem wykonania załadunku.
 - Kilometry: różnica liczników CAN, ewentualnie GPS z jawnym oznaczeniem. Ujemne różnice i braki nie są zerowane. Zużycie paliwa: różnica licznika paliwa CAN.
 - Plan kierowcy TXT do sprawdzenia i wysłania przez dispo, pauza pobierania, eksport JSON z próbkami i zleceniami.
 - Dane zapisane atomowo w pliku na trwałym dysku; restart nie zeruje postępu. Jeden proces / jedna instancja.
