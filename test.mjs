@@ -27,10 +27,11 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
   assert.equal((await req('/token',{method:'POST',body:new URLSearchParams(tokenParams)})).status,400);
   const rpc=async(method,params)=>{const r=await req('/mcp',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});assert.equal(r.status,200);return r.json();};
   assert.equal((await rpc('initialize',{})).result.protocolVersion,'2025-03-26');
-  const listing=await rpc('tools/list');assert.equal(listing.result.tools.length,3);assert.ok(listing.result.tools.every(t=>t.annotations.readOnlyHint));
+  const listing=await rpc('tools/list');assert.equal(listing.result.tools.length,5);assert.ok(listing.result.tools.every(t=>t.annotations.readOnlyHint));
   await rpc('tools/call',{name:'wfirma_company'});assert.equal(calls[0][1],'companies');assert.equal(calls[0][2],'1785731');
   await rpc('tools/call',{name:'wfirma_list',arguments:{resource:'expenses',page:2,limit:5}});assert.deepEqual(calls[1].slice(1),['expenses',undefined,2,5]);
   for(const args of [{name:'wfirma_delete'},{name:'wfirma_get',arguments:{resource:'expenses',id:'../delete/1'}},{name:'wfirma_list',arguments:{resource:'expenses',company_id:'2'}},{name:'wfirma_list',arguments:{resource:'expenses',limit:500}}])assert.equal((await rpc('tools/call',args)).error.code,-32602);
+  assert.equal((await rpc('tools/call',{name:'dbk_vehicles'})).result.isError,true);
   assert.equal(calls.length,2);
   assert.equal((await req('/mcp',{method:'POST',headers:{Authorization:'Bearer '+token+'x'},body:'{}'})).status,401);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
@@ -51,4 +52,40 @@ test('Signed form survives a new server process state; tampering and missing coo
   assert.equal((await post(ticket,'tcog_auth=wrong')).status,400);
   assert.equal((await post(ticket,cookie)).status,303);
  }finally{for(const s of servers){s.closeAllConnections();await new Promise(r=>s.close(r));}}
+});
+
+
+import {createDbk,dbkSignature,dbkUrl} from './server.mjs';
+test('DBK signature matches vendor example; unsafe destinations rejected',()=>{
+ assert.equal(dbkSignature('e31d0445-dfa0-47f8-924b-8e60002f8030','sekretny-token','https://example.com/webapi/auth-sessions','1507549270000000'),'09a1a19f6260fd81204b63fc6cba8b1a5cfbb449bb0a0d768fd311a9562c7198');
+ for(const url of [undefined,'http://gps.grupadbk.com/webapi/','https://evil.example/webapi/','https://gps.grupadbk.com/other','https://gps.grupadbk.com/webapi/?token=x'])assert.throws(()=>dbkUrl(url));
+});
+test('DBK history discovery, auth, field projection, bounds and session cleanup',async()=>{
+ const calls=[];
+ const base='https://gps.grupadbk.com/webapi';
+ const transport=async(url,method,headers,body)=>{
+  calls.push({url,method});
+  if(method==='DELETE')return {};
+  if(url===base+'/auth-sessions'){
+   assert.equal(headers['X-Auth-Signature'],dbkSignature('fake-key','fake-secret',url,body.nonce));
+   return {data:{token:'fake-session'}};
+  }
+  assert.equal(headers.Authorization,'token fake-session');
+  if(url===base+'/')return {links:{cars:base+'/cars-root',dataframes:base+'/dataframes'}};
+  if(url===base+'/cars-root')return {links:{history_cars:base+'/cars',cars_list:base+'/cars'}};
+  if(url===base+'/cars')return {cars:[{device_id:'123',plate_number:'TEST'}]};
+  if(url===base+'/dataframes')return {links:{query:{url:base+'/dataframes/search'}}};
+  if(url===base+'/dataframes/search'){assert.equal(method,'POST');assert.equal(body.devices,'123');return {items:[base+'/dataframes/list']};}
+  if(url===base+'/dataframes/list')return {items:[{date:'2026-09-07T11:15:00Z',lat:54,lng:18,logistics:{'total_distance:can':{raw:12345},'total_fuel:can':{raw:2345}},token:'must-not-return',tachograph:{slot1:{mode:'drive',driver:{name:'Test',card_number:'not-needed'}}}}]};
+  throw Error('Unexpected call');
+ };
+ const dbk=createDbk({DBK_API_KEY:'fake-key',DBK_API_SECRET:'fake-secret'},transport);
+ const result=await dbk.run('dbk_history',{device_id:'123',oldest:'2026-09-07T11:00:00Z',newest:'2026-09-07T12:00:00Z'});
+ assert.equal(result.sample_count,1);assert.equal(result.samples[0].odometer_can_km,12345);assert.equal(result.samples[0].total_fuel_can_l,2345);
+ assert.equal(JSON.stringify(result).includes('must-not-return'),false);assert.equal(JSON.stringify(result).includes('card_number'),false);
+ assert.equal(calls.at(-1).method,'DELETE');
+ const n=calls.length;
+ await assert.rejects(dbk.run('dbk_history',{device_id:'123',oldest:'2026-09-07T11:00:00',newest:'2026-09-07T12:00:00Z'}));
+ await assert.rejects(dbk.run('dbk_history',{device_id:'123',oldest:'2026-09-07T10:00:00Z',newest:'2026-09-07T12:00:00Z'}));assert.equal(calls.length,n);
+ await assert.rejects(dbk.run('dbk_history',{device_id:'999',oldest:'2026-09-07T11:00:00Z',newest:'2026-09-07T12:00:00Z'}));assert.equal(calls.at(-1).method,'DELETE');
 });
