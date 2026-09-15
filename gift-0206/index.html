@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="theme-color" content="#160f17">
+  <title>02/06 — Dla Ciebie</title>
+  <style>
+    :root { color-scheme: dark; --ink:#faf0ec; --muted:#beaab6; --rose:#efb5c7; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#160f17; color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background:radial-gradient(ellipse at 85% 15%,#64344740,transparent 55%),radial-gradient(ellipse at 0% 100%,#55354925,transparent 55%); }
+    main { position:relative; min-height:100svh; max-width:760px; margin:auto; padding: max(32px,env(safe-area-inset-top)) 28px max(26px,env(safe-area-inset-bottom)); display:flex; flex-direction:column; }
+    header { display:flex; align-items:center; justify-content:space-between; padding-bottom:25px; border-bottom:1px solid #efb5c72b; }
+    .mark { letter-spacing:.16em; font-size:14px; } .dedication { font-family:Georgia,serif; font-style:italic; color:var(--muted); font-size:16px; }
+    .stage { flex:1; display:flex; align-items:center; padding:48px 0; }
+    section { width:100%; animation:arrive .65s ease both; } [hidden] { display:none!important; }
+    .eyebrow { color:var(--rose); text-transform:uppercase; font-size:12px; letter-spacing:.22em; margin:0 0 26px; }
+    h1,h2 { font-family:Georgia,"Times New Roman",serif; font-weight:400; line-height:1.13; letter-spacing:-.035em; margin:0 0 28px; font-size:clamp(38px,8vw,64px); }
+    h1 { font-size:clamp(92px,23vw,158px); margin-bottom:36px; letter-spacing:-.065em; } h1 span { font-style:italic; color:var(--rose); font-size:.65em; }
+    p { font-size:18px; line-height:1.7; margin:0 0 32px; } .soft { color:var(--muted); }
+    button,.button { display:flex; justify-content:center; align-items:center; min-height:56px; width:100%; border:1px solid transparent; border-radius:4px; padding:18px 22px; background:var(--rose); color:#24131d; text-decoration:none; font:600 13px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; letter-spacing:.13em; cursor:pointer; transition:background .2s,transform .2s; }
+    button:hover,.button:hover { background:#f6c9d6; } button:active,.button:active { transform:translateY(1px); }
+    .secondary { background:transparent; color:var(--ink); border-color:#efb5c740; margin-top:14px; } .secondary:hover { background:#efb5c70d; }
+    :focus-visible { outline:2px solid var(--ink); outline-offset:5px; }
+    label { display:block; font-size:16px; color:var(--muted); margin-bottom:12px; }
+    input { width:100%; padding:17px 0; border:0; border-bottom:1px solid #beaab6; border-radius:0; background:transparent; color:var(--ink); font:24px Georgia,serif; margin-bottom:24px; }
+    .hint { min-height:58px; font-size:16px; color:var(--rose); margin:20px 0 0; }
+    footer { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:12px; letter-spacing:.1em; }
+    .progress { display:flex; gap:8px; } .progress i { display:block; width:22px; height:2px; background:#efb5c72b; } .progress i.active { background:var(--rose); }
+    .final-city { color:var(--rose); font-style:italic; } .heart { font-size:26px; margin-bottom:24px; }
+    @keyframes arrive { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @media(min-width:600px) { main { padding:42px 64px 30px; } .stage { padding:65px 0; } button,.button { max-width:370px; } }
+    @media(prefers-reduced-motion:reduce) { *,*::before { animation:none!important; transition:none!important; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><span class="mark">02 / 06</span><span class="dedication">Dla Ciebie.</span></header>
+  <div class="stage">
+    <section data-step="0" aria-labelledby="start-title">
+      <h1 id="start-title" tabindex="-1">02<span>/06</span></h1>
+      <p>Pati zrobiła swoje.<br>Teraz Twoja kolej.</p>
+      <button id="start">ROZPOCZNIJ</button>
+    </section>
+    <section data-step="1" aria-labelledby="riddle-title" hidden>
+      <p class="eyebrow">Posłuchaj uważnie</p>
+      <h2 id="riddle-title" tabindex="-1">Jaki jest wspólny mianownik tych utworów?</h2>
+      <a class="button" id="playlist" href="https://open.spotify.com/" target="_blank" rel="noopener noreferrer">POSŁUCHAJ NA SPOTIFY ↗</a>
+      <button class="secondary" id="answer">MAM ODPOWIEDŹ</button>
+    </section>
+    <section data-step="2" aria-labelledby="answer-title" hidden>
+      <p class="eyebrow">Wszystkie prowadzą do…</p>
+      <h2 id="answer-title" tabindex="-1">Jednego miasta.</h2>
+      <form id="form">
+        <label for="city">Wpisz nazwę miasta</label>
+        <input id="city" name="city" autocomplete="off" autocapitalize="words" spellcheck="false" maxlength="100" required aria-describedby="hint">
+        <button type="submit">SPRAWDŹ</button>
+        <p class="hint" id="hint" role="status" aria-live="polite"></p>
+      </form>
+      <button class="secondary" id="back">POSŁUCHAM JESZCZE RAZ</button>
+    </section>
+    <section data-step="3" aria-labelledby="final-title" hidden>
+      <p class="heart" aria-label="serce">❤️</p>
+      <h2 id="final-title" tabindex="-1">Dobrze, Myszmiś.<br><span class="final-city">Gdynia.</span></h2>
+      <p class="soft">Ale to dopiero połowa odpowiedzi.</p>
+      <p>Jutro patrzymy na historie innych. 🎬</p>
+    </section>
+  </div>
+  <footer><span>OD OSKARA</span><div class="progress" aria-label="Postęp"><i class="active"></i><i></i><i></i><i></i></div></footer>
+  <noscript><p>Włącz JavaScript w przeglądarce, żeby rozpocząć zagadkę.</p></noscript>
+</main>
+<script>
+  // Zamień na docelowy adres https://open.spotify.com/playlist/…
+  const PLAYLIST_URL = 'https://open.spotify.com/';
+  document.querySelector('#playlist').href = PLAYLIST_URL;
+  let mistakes = 0;
+  const panels = [...document.querySelectorAll('[data-step]')];
+  function show(step) {
+    panels.forEach((panel, i) => { panel.hidden = i !== step; });
+    document.querySelectorAll('.progress i').forEach((dot, i) => dot.classList.toggle('active', i <= step));
+    panels[step].querySelector('h1,h2').focus({preventScroll:true});
+    window.scrollTo({top:0,behavior:'instant'});
+  }
+  document.querySelector('#start').addEventListener('click', () => show(1));
+  document.querySelector('#answer').addEventListener('click', () => show(2));
+  document.querySelector('#back').addEventListener('click', () => show(1));
+  document.querySelector('#form').addEventListener('submit', event => {
+    event.preventDefault();
+    const input = document.querySelector('#city');
+    const value = input.value.trim().normalize('NFC').toLocaleLowerCase('pl');
+    const hint = document.querySelector('#hint');
+    if (!value) { hint.textContent = 'Wpisz nazwę miasta.'; input.focus(); return; }
+    if (value === 'gdynia') { input.removeAttribute('aria-invalid'); show(3); return; }
+    const hints = ['Pudło 😈', 'Podpowiedź: morze jest bliżej, niż myślisz.', 'Podpowiedź: znasz to miasto zdecydowanie lepiej, niż sądzisz.'];
+    hint.textContent = hints[Math.min(mistakes++, hints.length - 1)];
+    input.setAttribute('aria-invalid', 'true');
+    input.focus(); input.select();
+  });
+</script>
+</body>
+</html>
