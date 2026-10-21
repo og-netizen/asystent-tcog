@@ -79,6 +79,7 @@ test('Transport creation validates real truck, load assignment and returns actua
  const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET',body)=>{
   if(m==='POST'){posts++;assert.deepEqual(body,{truckId:'truck-1',loadIds:['load-1']});return {id:'order-1',orderNumber:'1/26'};}
   if(u.pathname==='/api/internal-trucks')return {items:[{id:'truck-1',regNumber:'TEST'}]};
+  if(u.pathname==='/api/external-trucks')return {items:[]};
   if(u.pathname==='/api/loads')return {items:[{id:'load-1',carrierOrderNumber:assigned?'EXISTING':''}]};
   return {id:'order-1',status:'NEEDS_CONFIRMATION',transportSet:{truckId:'truck-1'},price:200};
  });
@@ -122,4 +123,22 @@ test('Verified PUT code path sends only validated operational fields to the clie
  const p=await c.run('firetms_update_load',{loadId:'load-1',data});assert.equal(p.execution_enabled,true);
  const r=await c.run('firetms_update_load',{loadId:'load-1',data,apply:true,review_token:p.review_token});
  assert.equal(r.written,true);assert.equal(writes.length,1);assert.equal(writes[0].m,'PUT');assert.equal(writes[0].u.pathname,'/api/loads/load-1');assert.deepEqual(writes[0].body,data);assert.equal(writes[0].body.price,undefined);
+});
+test('External carrier truck creates an unconfirmed forwarding order and is discoverable by registration',async()=>{
+ const writes=[];const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET',body)=>{
+  if(m==='POST'){writes.push({u,body});return {id:'forward-1'};}
+  if(u.pathname==='/api/internal-trucks')return {items:[]};
+  if(u.pathname==='/api/external-trucks')return {items:[{id:'external-1',regNumber:'WPR1810T',carrierId:'carrier-1'}]};
+  if(u.pathname==='/api/loads')return {items:[{id:'load-1'}]};
+  return {id:'forward-1',status:'NEW'};
+ });
+ const read=await c.run('firetms_list',{resource:'trucks',filter:'WPR1810T'});assert.equal(read.data.items[0].id,'external-1');
+ const data={truckId:'external-1',loadIds:['load-1']};const p=await c.run('firetms_create_transport_order',{data});assert.equal(p.path,'/forwarding-order');
+ const r=await c.run('firetms_create_transport_order',{data,apply:true,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,data);
+});
+test('Definite vendor validation rejection reports HTTP and field names and never repeats the attempt',async()=>{
+ let posts=0;const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='GET')return {items:[]};posts++;throw Error('FireTMS HTTP 400 fields price');});
+ const data=loadData();const p=await c.run('firetms_create_load',{data});
+ for(let i=0;i<2;i++)await assert.rejects(c.run('firetms_create_load',{data,apply:true,review_token:p.review_token}),/HTTP 400 fields price/);
+ assert.equal(posts,1);
 });
