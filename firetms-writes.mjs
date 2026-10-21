@@ -5,7 +5,7 @@ const obj=(properties,required=[])=>({type:'object',properties,required,addition
 const id={type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'};
 const transportSchema=obj({truckId:id,loadIds:{type:'array',items:id,minItems:1,maxItems:30}},['truckId','loadIds']);
 export const firetmsWriteTools=[
- ['firetms_create_load','Utwórz zlecenie KLIENTA (load), bez stawek. Najpierw apply=false: walidacja i podgląd. apply=true z otrzymanym review_token wykonuje zapis. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie wysyłaj cen, płatności ani faktur.',obj({data:schemas.createLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_create_load','Utwórz zlecenie KLIENTA (load). Zgodnie z zasadą TCOG przychód tymczasowy wynosi 1 EUR i jest oznaczony do zmiany przy zamknięciu. Najpierw apply=false: walidacja i podgląd. apply=true z otrzymanym review_token wykonuje zapis. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie podawaj dowolnych cen, płatności ani faktur; serwer dodaje tylko uzgodnione tymczasowe 1 EUR.',obj({data:schemas.createLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
  ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące auto własne lub zewnętrzne z istniejących loadIds. Dla auta zewnętrznego powstaje zlecenie spedycyjne NEW bez potwierdzenia. FireTMS może potwierdzić transport własny i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw apply=false, potem apply=true z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
  ['firetms_update_load','Przygotuj edycję zlecenia KLIENTA (loadId, nie ID zlecenia transportowego). data jest kompletnym zestawem pól operacyjnych, nie częściową łatką. Podgląd działa; wykonanie PUT jest domyślnie zablokowane, dopóki nie potwierdzimy z FireTMS zachowania pominiętej ceny. Nie zmienia przypisania auta. Nie obiecuj zapisu na podstawie samego podglądu.',obj({loadId:id,data:schemas.updateLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['loadId','data'])]
 ].map(([name,description,inputSchema])=>({name,description,inputSchema,annotations:{readOnlyHint:false,destructiveHint:name==='firetms_update_load',idempotentHint:false,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:['firetms:read','firetms:write']}]}));
@@ -50,6 +50,12 @@ function validateLoad(d){
 // Restart invalidates every receipt. For recovery inspect FireTMS before preparing another operation.
 export function createFiretmsWrites(env,request){
  const receipts=new Map();
+ const provisionalNote='KWOTY TYMCZASOWE: przychód 1 EUR i koszt 1 EUR do ustalenia i zmiany przez agenta zamykającego zlecenie po wykonaniu przewozu. Nie są stawką ostateczną.';
+ function payloadFor(name,a,target){
+  if(name==='firetms_create_load')return {...a.data,price:{amount:1,currencyCode:'EUR'},internalNote:[a.data.internalNote,provisionalNote].filter(Boolean).join('\n')};
+  if(name==='firetms_create_transport_order'&&target==='/forwarding-order')return {...a.data,cost:{fixedAmount:1,currencyCode:'EUR'},notes:provisionalNote};
+  return a.data;
+ }
  const fingerprint=(n,a)=>createHash('sha256').update(JSON.stringify([n,a.loadId,a.data])).digest('hex');
  async function findLoad(loadId){
   for(let page=1;page<=20;page++){
@@ -92,7 +98,7 @@ export function createFiretmsWrites(env,request){
    const target=await preflight(name,a)||path;
    const review_token=randomBytes(24).toString('base64url');
    receipts.set(review_token,{hash:fingerprint(name,a),expires:Date.now()+900000,state:'prepared',target});
-   return {status:'preview_only',written:false,method,path:target,data:a.data,review_token,expires_in_seconds:900,
+   return {status:'preview_only',written:false,method,path:target,data:payloadFor(name,a,target),review_token,expires_in_seconds:900,
     execution_enabled:name!=='firetms_update_load'||env.FIRETMS_OPERATIONAL_PUT_VERIFIED==='true',
     warning:name==='firetms_update_load'?'PUT zastępuje dane zlecenia klienta. Wykonanie domyślnie zablokowane: niepotwierdzone zachowanie pominiętej ceny.':name==='firetms_create_transport_order'?'FireTMS dobiera domyślny zestaw i oblicza koszt z ustawień auta. Sprawdź auto, naczepę i kierowców.':'Możliwy szkic DRAFT bez ceny. Bez referencji klienta API nie gwarantuje wykrycia duplikatów. Po utracie odpowiedzi sprawdź listę przed ponowną próbą.'};
   }
@@ -106,12 +112,12 @@ export function createFiretmsWrites(env,request){
   try{const target=await preflight(name,a)||path;if(target!==r.target)throw Error('FireTMS truck type changed; prepare again');}catch(e){r.state='prepared';throw e;}
   r.state='in_progress';
   try{
-   const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'false'}:params,method,a.data);
+   const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'false'}:params,method,payloadFor(name,a,r.target));
    // Never call a status complete/confirmed unless the subsequent read says so.
    let verification=null;
    if(name==='firetms_create_transport_order'&&data?.id){try{verification=await request('/orders/'+data.id,{});}catch{verification={readback_failed:true};}}
    if(name==='firetms_create_load'&&a.data.clientOrderNumber){try{verification=await request('/loads',{page:'1',size:'2',query:'clientSideOrderNumber=="'+a.data.clientOrderNumber+'"'});}catch{verification={readback_failed:true};}}
-   r.result={status:'api_accepted',written:true,data,verification,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';return r.result;
+   r.result={status:'api_accepted',written:true,data,verification,provisionalAmounts:name==='firetms_create_load'?{revenue_eur:1,final:false}:r.target==='/forwarding-order'?{cost_eur:1,final:false}:undefined,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';return r.result;
   }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: fields [A-Za-z ]+)?$/.test(e.message)){r.state='rejected';r.error=e.message;throw e;}throw Error('FireTMS write outcome unknown; inspect system before retry');}
  }};
 }

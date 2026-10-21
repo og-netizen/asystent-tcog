@@ -113,3 +113,7 @@ Every operation first uses `apply=false` (default) and returns a short-lived `re
 Write HTTP transport is restricted to the official vendor origin and the three documented endpoints, does not follow redirects, and does not retry. No deletion, invoice, payment, cost, or price parameters are accepted. Preview success is not proof of a successful API write. Non-2xx/timeout results after a write are marked uncertain, not automatically classified as a safe retry.
 
 Source: current official Swagger `https://app.firetms.com/api/v2/api-docs`, checked 2026-10-21. Live mutations have not been tested against production; tests use fake upstreams.
+
+### TCOG provisional amounts — explicit operational exception, 2026-10-21
+
+When final amounts are not yet known, the user authorized fixed placeholders of **1 EUR revenue and 1 EUR carrier cost**. Client-load creation supplies `price.amount=1`, `price.currencyCode=EUR`; external carrier forwarding-order creation supplies `cost.fixedAmount=1`, `cost.currencyCode=EUR`. Both are labeled provisional in internal notes for the closing agent to replace after completion. Arbitrary financial inputs, invoicing and payments remain unavailable. This does not enable load PUT editing. Own-fleet transport orders still compute costs according to FireTMS because their creation endpoint has no cost override field.

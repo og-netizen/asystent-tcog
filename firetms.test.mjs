@@ -47,7 +47,7 @@ test('Create load: preview does not write, financial keys rejected, payload-boun
  const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,key,method='GET',body)=>{
   calls.push({u,method,body});
   if(method==='GET')return {items:created?[{id:'load-1',clientSideOrderNumber:'REF-TEST',statusDescription:'DRAFT',price:200}]:[]};
-  created=true;assert.equal(u.pathname,'/api/loads');assert.equal(u.searchParams.get('allowClientOrderNumberDuplicates'),'false');return {id:'load-1',price:200};
+  created=true;assert.deepEqual(body.price,{amount:1,currencyCode:'EUR'});assert.ok(body.internalNote.includes('KWOTY TYMCZASOWE'));assert.equal(u.pathname,'/api/loads');assert.equal(u.searchParams.get('allowClientOrderNumberDuplicates'),'false');return {id:'load-1',price:200};
  });
  const data=loadData();const p=await c.run('firetms_create_load',{data});
  assert.equal(p.written,false);assert.equal(calls.some(c=>c.method!=='GET'),false);
@@ -134,7 +134,7 @@ test('External carrier truck creates an unconfirmed forwarding order and is disc
  });
  const read=await c.run('firetms_list',{resource:'trucks',filter:'WPR1810T'});assert.equal(read.data.items[0].id,'external-1');
  const data={truckId:'external-1',loadIds:['load-1']};const p=await c.run('firetms_create_transport_order',{data});assert.equal(p.path,'/forwarding-order');
- const r=await c.run('firetms_create_transport_order',{data,apply:true,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,data);
+ const r=await c.run('firetms_create_transport_order',{data,apply:true,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,{...data,cost:{fixedAmount:1,currencyCode:'EUR'},notes:writes[0].body.notes});assert.ok(writes[0].body.notes.includes('KWOTY TYMCZASOWE'));
 });
 test('Definite vendor validation rejection reports HTTP and field names and never repeats the attempt',async()=>{
  let posts=0;const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='GET')return {items:[]};posts++;throw Error('FireTMS HTTP 400 fields price');});
