@@ -99,13 +99,13 @@ test('Invalid route chronology, incomplete addresses, terminal cargos, ADR and a
  assert.equal(count,0);
  for(const [url,method]of [['https://app.firetms.com/api/payments','POST'],['https://app.firetms.com/api/loads','DELETE'],['https://app.firetms.com/api/orders/123','PUT']])assert.throws(()=>firetmsTransport(new URL(url),'fake',method,{}));
 });
-test('Read-only tokens cannot discover or execute write tools; write scope does not grant accounting or DBK',async()=>{
+test('Read-only tokens discover scoped write descriptors but cannot execute; write scope does not grant accounting or DBK',async()=>{
  const env={NODE_ENV:'test',PUBLIC_URL:'http://127.0.0.1',ADMIN_PASSWORD:'a'.repeat(40),OAUTH_CLIENT_SECRET:'s'.repeat(40),WFIRMA_COMPANY_ID:'1785731',WFIRMA_ACCESS_KEY:'fake',WFIRMA_SECRET_KEY:'fake',WFIRMA_APP_KEY:'fake'};
  const server=createApp(env);await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const token=scope=>{const v=Buffer.from(JSON.stringify({aud:'http://127.0.0.1/mcp',scope,exp:Date.now()+10000,sub:'1785731'})).toString('base64url');return v+'.'+createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(v).digest('base64url');};
  const rpc=async(scope,method,params)=> (await fetch('http://127.0.0.1:'+server.address().port+'/mcp',{method:'POST',headers:{Authorization:'Bearer '+token(scope)},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})})).json();
  try{
-  const read=(await rpc('firetms:read','tools/list')).result.tools.map(t=>t.name);assert.deepEqual(read,['firetms_list','firetms_order']);
+  const read=(await rpc('firetms:read','tools/list')).result.tools.map(t=>t.name);assert.deepEqual(read,['firetms_list','firetms_order','firetms_create_load','firetms_create_transport_order','firetms_update_load']);
   const write=(await rpc('firetms:read firetms:write','tools/list')).result.tools;
   assert.ok(write.some(t=>t.name==='firetms_create_load'&&!t.annotations.readOnlyHint));assert.ok(!write.some(t=>t.name.startsWith('wfirma_')||t.name.startsWith('dbk_')));
   const rejected=await rpc('firetms:read','tools/call',{name:'firetms_create_load',arguments:{data:loadData(),apply:true}});assert.equal(rejected.result.isError,true);assert.ok(rejected.result._meta['mcp/www_authenticate'][0].includes('firetms:write'));
