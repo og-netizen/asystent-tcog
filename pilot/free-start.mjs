@@ -1,3 +1,4 @@
+import {firetmsDiagnostic} from '../firetms.mjs';
 // Explicit, disposable manual test mode. Never used for durable production data.
 import http from 'node:http';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -24,6 +25,6 @@ export async function createFreePilot(env,dbk){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const app=await createFreePilot(process.env);
- app.server.listen(Number(process.env.PORT||10000),'0.0.0.0',()=>console.log('TCOG 0.3.2: pilot testowy, zapis tymczasowy, pobieranie wyłącznie ręczne.'));
+ app.server.listen(Number(process.env.PORT||10000),'0.0.0.0',()=>{console.log('TCOG 0.4.0: pilot testowy, zapis tymczasowy, MCP tylko odczyt.');void firetmsDiagnostic(process.env);});
  for(const signal of ['SIGTERM','SIGINT'])process.once(signal,async()=>{await app.close();process.exit(0);});
 }

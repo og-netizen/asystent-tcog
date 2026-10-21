@@ -93,3 +93,9 @@ Testy wykorzystują atrapę wFirmy; nie sprawdzają prawdziwych danych ani upraw
 Brak zależności npm. `package-lock.json` jest dołączony dla `npm ci`.
 
 Źródła: https://doc.wfirma.pl/ ; https://developers.openai.com/plugins/build/auth ; https://modelcontextprotocol.io/specification/2025-03-26/basic/transports ; https://render.com/docs/web-services
+
+## FireTMS — odczyt operacyjny
+
+Ustaw w Render `FIRETMS_API_KEY`. Opcjonalny `FIRETMS_BASE_URL` musi mieć wartość `https://app.firetms.com/api`. Klucza nie zapisuj w repozytorium. Dodaj scope OAuth `firetms:read` do połączenia i autoryzuj je ponownie. Narzędzia `firetms_list` i `firetms_order` obsługują wyłącznie GET do pojazdów, naczep, zleceń i ładunków; jawna lista pól usuwa pola finansowe oraz pola nieznane. Listy są stronicowane od 1, maksymalnie 50 pozycji. Filtry są dokładnym dopasowaniem numeru rejestracyjnego lub referencji klienta; nie są pełnotekstowym wyszukiwaniem. Opisy i notatki dowolne nie są eksportowane, bo mogą zawierać informacje finansowe. Tworzenie i edycja nie są jeszcze udostępnione.
+
+Po starcie serwer wykonuje jeden odczyt pojazdu i zapisuje wyłącznie status połączenia `FIRETMS_DIAGNOSTIC` (bez klucza i danych pojazdu). Ten test potwierdza dostęp do listy pojazdów, nie do wszystkich endpointów.

@@ -8,6 +8,6 @@
   },
   "scripts": {
     "start": "node pilot/free-start.mjs",
-    "test": "node --test test.mjs pilot/test.mjs"
+    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs"
   }
 }
