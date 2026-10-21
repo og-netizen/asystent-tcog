@@ -27,7 +27,7 @@ test('OAuth, PKCE, token replay, read-only routing and input validation',async()
   assert.equal((await req('/token',{method:'POST',body:new URLSearchParams(tokenParams)})).status,400);
   const rpc=async(method,params)=>{const r=await req('/mcp',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});assert.equal(r.status,200);return r.json();};
   assert.equal((await rpc('initialize',{})).result.protocolVersion,'2025-03-26');
-  const listing=await rpc('tools/list');assert.equal(listing.result.tools.length,5);assert.ok(listing.result.tools.every(t=>t.annotations.readOnlyHint));
+  const listing=await rpc('tools/list');assert.equal(listing.result.tools.length,3);assert.ok(listing.result.tools.every(t=>t.annotations.readOnlyHint));
   await rpc('tools/call',{name:'wfirma_company'});assert.equal(calls[0][1],'companies');assert.equal(calls[0][2],'1785731');
   await rpc('tools/call',{name:'wfirma_list',arguments:{resource:'expenses',page:2,limit:5}});assert.deepEqual(calls[1].slice(1),['expenses',undefined,2,5]);
   for(const args of [{name:'wfirma_delete'},{name:'wfirma_get',arguments:{resource:'expenses',id:'../delete/1'}},{name:'wfirma_list',arguments:{resource:'expenses',company_id:'2'}},{name:'wfirma_list',arguments:{resource:'expenses',limit:500}}])assert.equal((await rpc('tools/call',args)).error.code,-32602);

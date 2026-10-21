@@ -1,0 +1,617 @@
+{
+  "createLoad": {
+    "type": "object",
+    "properties": {
+      "cargoHandlings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "address": {
+              "type": "object",
+              "properties": {
+                "addressType": {
+                  "type": "string",
+                  "enum": [
+                    "CMR",
+                    "FULL",
+                    "ID"
+                  ],
+                  "maxLength": 2000
+                },
+                "area": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "city": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "companyName": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "coordinate": {
+                  "type": "object",
+                  "properties": {
+                    "latitude": {
+                      "type": "number",
+                      "format": "double"
+                    },
+                    "longitude": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "descriptionCMR": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "placeId": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "streetWithNumber": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "zipCode": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "additionalProperties": false
+            },
+            "cargoHandlingType": {
+              "type": "string",
+              "enum": [
+                "LOADING",
+                "UNLOADING",
+                "PLACE",
+                "PETROL_STATION",
+                "CUSTOMS_CLEARANCE",
+                "LEAVE_SEMITRAILER",
+                "ATTACH_SEMITRAILER"
+              ],
+              "maxLength": 2000
+            },
+            "cargos": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "adr": {
+                    "type": "boolean"
+                  },
+                  "adrClass": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "cargoName": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "correlationId": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "height": {
+                    "type": "number"
+                  },
+                  "ldm": {
+                    "type": "number"
+                  },
+                  "length": {
+                    "type": "number"
+                  },
+                  "loadSizeType": {
+                    "type": "string",
+                    "enum": [
+                      "DESCRIPTION",
+                      "LDM",
+                      "XYZ"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "packageExchange": {
+                    "type": "boolean"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "referenceCode": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "unitName": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "weight": {
+                    "type": "number"
+                  },
+                  "width": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 100
+            },
+            "comment": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "term": {
+              "type": "string",
+              "format": "date-time",
+              "maxLength": 2000
+            },
+            "termComment": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "timeWindow": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "end": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "start": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 100
+      },
+      "client": {
+        "type": "object",
+        "properties": {
+          "contactPerson": {
+            "type": "object",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "lastName": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "additionalProperties": false
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "taxId": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "vatEuId": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "clientOrderNumber": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "departmentId": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "internalNote": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "receptionDate": {
+        "type": "string",
+        "format": "date-time",
+        "maxLength": 2000
+      },
+      "requirements": {
+        "type": "object",
+        "properties": {
+          "semitrailerType": {
+            "type": "string",
+            "enum": [
+              "MEGA",
+              "TAUTLINER",
+              "SIDEBOARDED",
+              "JUMBO",
+              "COOLER",
+              "TENT",
+              "DUMP_TRUCK",
+              "VAN",
+              "CHEMICAL_TANKER",
+              "GAS_TANKER",
+              "PETROLEUM_TANKER",
+              "FOOD_TANKER",
+              "LOG_TRAILER",
+              "HOOK_LIFT",
+              "ISOTHERM",
+              "KOFFER",
+              "CONTAINER",
+              "CONTAINER_20_40",
+              "CAR_TRANSPORTER",
+              "FURNITURE_TRAILER",
+              "LOW_SUSPENSION",
+              "PLATFORM",
+              "OVERSIZED_CARGO",
+              "SPACIOUS",
+              "WALKING_FLOOR",
+              "SILOS",
+              "SWAP_BODY_SYSTEM",
+              "OTHER",
+              "COILMULDE",
+              "FRIGO_KOFFER",
+              "COOLER_STANDARD",
+              "DOUBLE_DECKER",
+              "FLOWER_TRAILER",
+              "T7_7M_7_7M",
+              "T15_4M",
+              "HOOKS_COOLER",
+              "BI_TEMPERATURE_COOLER",
+              "SOLO",
+              "BUS",
+              "DUMP_TRUCK_WITH_BLOWOUT"
+            ],
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "maxItems": 100
+      },
+      "temperatureRange": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "client",
+      "cargoHandlings"
+    ]
+  },
+  "updateLoad": {
+    "type": "object",
+    "properties": {
+      "cargoHandlings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "address": {
+              "type": "object",
+              "properties": {
+                "addressType": {
+                  "type": "string",
+                  "enum": [
+                    "CMR",
+                    "FULL",
+                    "ID"
+                  ],
+                  "maxLength": 2000
+                },
+                "area": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "city": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "companyName": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "coordinate": {
+                  "type": "object",
+                  "properties": {
+                    "latitude": {
+                      "type": "number",
+                      "format": "double"
+                    },
+                    "longitude": {
+                      "type": "number",
+                      "format": "double"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "descriptionCMR": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "placeId": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "streetWithNumber": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "zipCode": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "additionalProperties": false
+            },
+            "cargoHandlingType": {
+              "type": "string",
+              "enum": [
+                "LOADING",
+                "UNLOADING",
+                "PLACE",
+                "PETROL_STATION",
+                "CUSTOMS_CLEARANCE",
+                "LEAVE_SEMITRAILER",
+                "ATTACH_SEMITRAILER"
+              ],
+              "maxLength": 2000
+            },
+            "cargos": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "adr": {
+                    "type": "boolean"
+                  },
+                  "adrClass": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "cargoName": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "correlationId": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "height": {
+                    "type": "number"
+                  },
+                  "ldm": {
+                    "type": "number"
+                  },
+                  "length": {
+                    "type": "number"
+                  },
+                  "loadSizeType": {
+                    "type": "string",
+                    "enum": [
+                      "DESCRIPTION",
+                      "LDM",
+                      "XYZ"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "packageExchange": {
+                    "type": "boolean"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "referenceCode": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "unitName": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "weight": {
+                    "type": "number"
+                  },
+                  "width": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 100
+            },
+            "comment": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "term": {
+              "type": "string",
+              "format": "date-time",
+              "maxLength": 2000
+            },
+            "termComment": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "timeWindow": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "end": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "start": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 100
+      },
+      "client": {
+        "type": "object",
+        "properties": {
+          "contactPerson": {
+            "type": "object",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "lastName": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "additionalProperties": false
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "taxId": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "vatEuId": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "clientOrderNumber": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "internalNote": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "requirements": {
+        "type": "object",
+        "properties": {
+          "semitrailerType": {
+            "type": "string",
+            "enum": [
+              "MEGA",
+              "TAUTLINER",
+              "SIDEBOARDED",
+              "JUMBO",
+              "COOLER",
+              "TENT",
+              "DUMP_TRUCK",
+              "VAN",
+              "CHEMICAL_TANKER",
+              "GAS_TANKER",
+              "PETROLEUM_TANKER",
+              "FOOD_TANKER",
+              "LOG_TRAILER",
+              "HOOK_LIFT",
+              "ISOTHERM",
+              "KOFFER",
+              "CONTAINER",
+              "CONTAINER_20_40",
+              "CAR_TRANSPORTER",
+              "FURNITURE_TRAILER",
+              "LOW_SUSPENSION",
+              "PLATFORM",
+              "OVERSIZED_CARGO",
+              "SPACIOUS",
+              "WALKING_FLOOR",
+              "SILOS",
+              "SWAP_BODY_SYSTEM",
+              "OTHER",
+              "COILMULDE",
+              "FRIGO_KOFFER",
+              "COOLER_STANDARD",
+              "DOUBLE_DECKER",
+              "FLOWER_TRAILER",
+              "T7_7M_7_7M",
+              "T15_4M",
+              "HOOKS_COOLER",
+              "BI_TEMPERATURE_COOLER",
+              "SOLO",
+              "BUS",
+              "DUMP_TRUCK_WITH_BLOWOUT"
+            ],
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "maxItems": 100
+      },
+      "temperatureRange": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "client",
+      "cargoHandlings"
+    ]
+  }
+}

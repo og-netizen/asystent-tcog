@@ -1,0 +1,115 @@
+import {readFileSync} from 'node:fs';
+import {randomBytes,createHash} from 'node:crypto';
+const schemas=JSON.parse(readFileSync(new URL('./firetms-schemas.json',import.meta.url),'utf8'));
+const obj=(properties,required=[])=>({type:'object',properties,required,additionalProperties:false});
+const id={type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'};
+const transportSchema=obj({truckId:id,loadIds:{type:'array',items:id,minItems:1,maxItems:30}},['truckId','loadIds']);
+export const firetmsWriteTools=[
+ ['firetms_create_load','Utwórz zlecenie KLIENTA (load), bez stawek. Najpierw apply=false: walidacja i podgląd. apply=true z otrzymanym review_token wykonuje zapis. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie wysyłaj cen, płatności ani faktur.',obj({data:schemas.createLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące własne auto z istniejących loadIds. FireTMS może potwierdzić zlecenie i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw apply=false, potem apply=true z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_update_load','Przygotuj edycję zlecenia KLIENTA (loadId, nie ID zlecenia transportowego). data jest kompletnym zestawem pól operacyjnych, nie częściową łatką. Podgląd działa; wykonanie PUT jest domyślnie zablokowane, dopóki nie potwierdzimy z FireTMS zachowania pominiętej ceny. Nie zmienia przypisania auta. Nie obiecuj zapisu na podstawie samego podglądu.',obj({loadId:id,data:schemas.updateLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['loadId','data'])]
+].map(([name,description,inputSchema])=>({name,description,inputSchema,annotations:{readOnlyHint:false,destructiveHint:name==='firetms_update_load',idempotentHint:false,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:['firetms:read','firetms:write']}]}));
+export function validate(value,s,path='data'){
+ const fail=()=>{throw Error('FireTMS invalid '+path);};
+ if(s.type==='object'){
+  if(!value||typeof value!=='object'||Array.isArray(value))fail();
+  if(Object.keys(value).some(k=>!Object.hasOwn(s.properties,k)))fail();
+  for(const k of s.required||[])if(!Object.hasOwn(value,k))fail();
+  for(const [k,v]of Object.entries(value))validate(v,s.properties[k],path+'.'+k);
+ }else if(s.type==='array'){
+  if(!Array.isArray(value)||value.length<(s.minItems??0)||value.length>(s.maxItems??100))fail();
+  value.forEach((v,i)=>validate(v,s.items,path+'.'+i));
+ }else if(s.type==='string'){
+  if(typeof value!=='string'||value.length>(s.maxLength??2000)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)||(s.pattern&&!new RegExp(s.pattern).test(value)))fail();
+  if(s.format==='date-time'&&(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(value)||!Number.isFinite(Date.parse(value))))fail();
+  if(s.format==='date-time'){const [y,m,d]=value.slice(0,10).split('-').map(Number);const dt=new Date(Date.UTC(y,m-1,d));if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d)fail();}
+ }else if(s.type==='boolean'){if(typeof value!=='boolean')fail();}
+ else if(['number','integer'].includes(s.type)){if(typeof value!=='number'||!Number.isFinite(value)||(s.type==='integer'&&!Number.isInteger(value)))fail();}
+ if(s.enum&&!s.enum.includes(value))fail();
+}
+function validateLoad(d){
+ if(!d.client||![d.client.id,d.client.taxId,d.client.vatEuId].some(v=>typeof v==='string'&&v.trim()))throw Error('FireTMS invalid client');
+ const points=d.cargoHandlings;
+ if(!Array.isArray(points)||points.length<2||points.length>30)throw Error('FireTMS invalid route');
+ const start=points.findIndex(p=>['LOADING','ATTACH_SEMITRAILER'].includes(p.cargoHandlingType));
+ if(start<0||!points.some((p,i)=>i>start&&['UNLOADING','LEAVE_SEMITRAILER'].includes(p.cargoHandlingType)))throw Error('FireTMS invalid route pair');
+ let previous=-Infinity;
+ for(const p of points){
+  if(!p.term||!p.cargoHandlingType||!p.address)throw Error('FireTMS invalid route point');
+  const time=Date.parse(p.term);if(time<previous)throw Error('FireTMS invalid route chronology');previous=time;
+  const a=p.address;if(!a.addressType)throw Error('FireTMS invalid address');
+  for(const k of a.addressType==='ID'?['placeId']:a.addressType==='FULL'?['zipCode','city','streetWithNumber','companyName']:['zipCode','city'])if(!a[k]?.trim())throw Error('FireTMS invalid address');
+  if(a.coordinate&&(Math.abs(a.coordinate.latitude)>90||Math.abs(a.coordinate.longitude)>180||!Number.isFinite(a.coordinate.latitude)||!Number.isFinite(a.coordinate.longitude)))throw Error('FireTMS invalid coordinate');
+  if(p.cargos?.length&&!['LOADING','UNLOADING'].includes(p.cargoHandlingType))throw Error('FireTMS invalid cargo at terminal');
+  for(const c of p.cargos||[]){if(c.adr&&!c.adrClass?.trim())throw Error('FireTMS invalid ADR class');for(const k of ['weight','quantity','length','width','height','ldm'])if(c[k]!==undefined&&c[k]<0)throw Error('FireTMS invalid cargo amount');}
+  if(p.timeWindow?.enabled&&(!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(p.timeWindow.start||'')||!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(p.timeWindow.end||'')))throw Error('FireTMS invalid time window');
+ }
+ if(d.temperatureRange&&(typeof d.temperatureRange.from!=='number'||typeof d.temperatureRange.to!=='number'||d.temperatureRange.from>d.temperatureRange.to))throw Error('FireTMS invalid temperature range');
+}
+// Receipts are single-process, expire after 15 minutes, and are never retried after an uncertain write.
+// Restart invalidates every receipt. For recovery inspect FireTMS before preparing another operation.
+export function createFiretmsWrites(env,request){
+ const receipts=new Map();
+ const fingerprint=(n,a)=>createHash('sha256').update(JSON.stringify([n,a.loadId,a.data])).digest('hex');
+ async function findLoad(loadId){
+  for(let page=1;page<=20;page++){
+   const r=await request('/loads',{page:String(page),size:'50'});
+   if(!Array.isArray(r.items))throw Error('FireTMS invalid loads response');
+   const found=r.items.find(x=>x.id===loadId);if(found)return found;
+   if(r.items.length<50||r.maxPageNumber<=page)break;
+  }
+  throw Error('FireTMS load not found within bounded search');
+ }
+ async function preflight(name,a){
+  if(name==='firetms_create_load'&&a.data.clientOrderNumber){
+   const ref=a.data.clientOrderNumber;
+   if(/["\\]/.test(ref))throw Error('FireTMS invalid reference');
+   const r=await request('/loads',{page:'1',size:'2',query:'clientSideOrderNumber=="'+ref+'"'});
+   if(!Array.isArray(r.items))throw Error('FireTMS invalid loads response');
+   if(r.items.length)throw Error('FireTMS duplicate client reference');
+  }
+  if(name==='firetms_create_transport_order'){
+   let foundTruck=false;
+   for(let page=1;page<=20;page++){const trucks=await request('/internal-trucks',{page:String(page),size:'50'});if(!Array.isArray(trucks.items))throw Error('FireTMS invalid trucks response');if(trucks.items.some(t=>t.id===a.data.truckId)){foundTruck=true;break;}if(trucks.items.length<50||trucks.maxPageNumber<=page)break;}
+   if(!foundTruck)throw Error('FireTMS truck not found');
+   if(new Set(a.data.loadIds).size!==a.data.loadIds.length)throw Error('FireTMS invalid duplicate load ids');
+   for(const loadId of a.data.loadIds){const l=await findLoad(loadId);if(l.carrierOrderNumber?.trim()||l.truckRegistrationNumber?.trim())throw Error('FireTMS load already assigned');}
+  }
+  if(name==='firetms_update_load')await findLoad(a.loadId);
+ }
+ return {async run(name,a){
+  const tool=firetmsWriteTools.find(t=>t.name===name);if(!tool)throw Error('FireTMS unknown tool');
+  validate(a,tool.inputSchema,'arguments');
+  if(JSON.stringify(a.data).length>50000)throw Error('FireTMS invalid payload size');
+  if(name!=='firetms_create_transport_order')validateLoad(a.data);
+  const path=name==='firetms_create_load'?'/loads':name==='firetms_update_load'?'/loads/'+a.loadId:'/transport-order';
+  const method=name==='firetms_update_load'?'PUT':'POST';
+  const params=name==='firetms_create_transport_order'?{}:{allowClientOrderNumberDuplicates:'false'};
+  if(!a.apply){
+   for(const [k,v]of receipts)if(v.expires<Date.now())receipts.delete(k);
+   if(receipts.size>=500)throw Error('FireTMS too many pending operations');
+   await preflight(name,a);
+   const review_token=randomBytes(24).toString('base64url');
+   receipts.set(review_token,{hash:fingerprint(name,a),expires:Date.now()+900000,state:'prepared'});
+   return {status:'preview_only',written:false,method,path,data:a.data,review_token,expires_in_seconds:900,
+    execution_enabled:name!=='firetms_update_load'||env.FIRETMS_OPERATIONAL_PUT_VERIFIED==='true',
+    warning:name==='firetms_update_load'?'PUT zastępuje dane zlecenia klienta. Wykonanie domyślnie zablokowane: niepotwierdzone zachowanie pominiętej ceny.':name==='firetms_create_transport_order'?'FireTMS dobiera domyślny zestaw i oblicza koszt z ustawień auta. Sprawdź auto, naczepę i kierowców.':'Możliwy szkic DRAFT bez ceny. Bez referencji klienta API nie gwarantuje wykrycia duplikatów. Po utracie odpowiedzi sprawdź listę przed ponowną próbą.'};
+  }
+  if(name==='firetms_update_load'&&env.FIRETMS_OPERATIONAL_PUT_VERIFIED!=='true')throw Error('FireTMS update blocked: omitted price semantics not verified');
+  const r=receipts.get(a.review_token);
+  if(!r||r.expires<Date.now()||r.hash!==fingerprint(name,a))throw Error('FireTMS invalid or expired review token');
+  if(r.state==='done')return r.result;
+  if(r.state!=='prepared')throw Error('FireTMS write outcome unknown or in progress; inspect system before retry');
+  r.state='checking';
+  try{await preflight(name,a);}catch(e){r.state='prepared';throw e;}
+  r.state='in_progress';
+  try{
+   const data=await request(path,params,method,a.data);
+   // Never call a status complete/confirmed unless the subsequent read says so.
+   let verification=null;
+   if(name==='firetms_create_transport_order'&&data?.id){try{verification=await request('/orders/'+data.id,{});}catch{verification={readback_failed:true};}}
+   if(name==='firetms_create_load'&&a.data.clientOrderNumber){try{verification=await request('/loads',{page:'1',size:'2',query:'clientSideOrderNumber=="'+a.data.clientOrderNumber+'"'});}catch{verification={readback_failed:true};}}
+   r.result={status:'api_accepted',written:true,data,verification,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';return r.result;
+  }catch(e){r.state='unknown';throw Error('FireTMS write outcome unknown; inspect system before retry');}
+ }};
+}
