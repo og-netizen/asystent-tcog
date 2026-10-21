@@ -119,6 +119,6 @@ export function createFiretmsWrites(env,request){
    if(name==='firetms_create_transport_order'&&data?.id){try{verification=await request('/orders/'+data.id,{});}catch{verification={readback_failed:true};}}
    if(name==='firetms_create_load'&&a.data.clientOrderNumber){try{verification=await request('/loads',{page:'1',size:'2',query:'clientSideOrderNumber=="'+a.data.clientOrderNumber+'"'});}catch{verification={readback_failed:true};}}
    r.result={status:'api_accepted',written:true,data,verification,provisionalAmounts:name==='firetms_create_load'?{revenue_eur:1,final:false}:r.target==='/forwarding-order'?{cost_eur:1,final:false}:undefined,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';return r.result;
-  }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: (?:fields [A-Za-z ]+|detail [A-Za-z0-9 ._:;-]*))?$/.test(e.message)){r.state='rejected';r.error=e.message;throw e;}throw Error('FireTMS write outcome unknown'+(/^FireTMS HTTP [0-9]{3}/.test(e.message)?' '+e.message.match(/HTTP [0-9]{3}/)[0]:'')+'; inspect system before retry');}
+  }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: [A-Za-z0-9 ._:;-]*)?$/.test(e.message)){r.state='rejected';r.error=e.message;throw e;}throw Error('FireTMS write outcome unknown; '+(/^FireTMS HTTP [0-9]{3}/.test(e.message)?e.message:'inspect system before retry'));}
  }};
 }

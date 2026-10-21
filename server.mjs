@@ -151,7 +151,7 @@ export function createApp(env,upstream=readWfirma){
      if(firetmsWriteTools.some(t=>t.name===name)&&!hasScope(auth.scope,'firetms:write'))return result({isError:true,content:[{type:'text',text:'Połącz ponownie z uprawnieniami firetms:read i firetms:write.'}],_meta:{'mcp/www_authenticate':['Bearer error="insufficient_scope", scope="firetms:read firetms:write"']}});
      if(!hasScope(auth.scope,'firetms:read'))return result({isError:true,content:[{type:'text',text:'Połącz ponownie z uprawnieniem firetms:read.'}],_meta:{'mcp/www_authenticate':['Bearer error="insufficient_scope", scope="firetms:read"']}});
      try{return result({content:[{type:'text',text:JSON.stringify(await firetms.run(name,a))}]});}
-     catch(e){return result({isError:true,content:[{type:'text',text:/^FireTMS [A-Za-z0-9 ._:;-]{1,180}$/.test(e.message)?e.message:'Operacja FireTMS nie powiodła się. Jeśli wykonywano zapis, sprawdź system przed ponowną próbą.'}]});}
+     catch(e){return result({isError:true,content:[{type:'text',text:/^FireTMS [A-Za-z0-9 ._:;-]{1,600}$/.test(e.message)?e.message:'Operacja FireTMS nie powiodła się. Jeśli wykonywano zapis, sprawdź system przed ponowną próbą.'}]});}
     }
     if(name?.startsWith('dbk_')){
      if(!hasScope(auth.scope,'dbk:read'))return result({isError:true,content:[{type:'text',text:'Połącz ponownie integrację z uprawnieniem dbk:read.'}],_meta:{'mcp/www_authenticate':[`Bearer error="insufficient_scope", scope="wfirma:read dbk:read"`]}});
