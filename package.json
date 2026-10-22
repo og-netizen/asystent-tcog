@@ -8,6 +8,9 @@
   },
   "scripts": {
     "start": "node pilot/free-start.mjs",
-    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs"
+    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs ptv.test.mjs ptv-report.test.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "1.17.1"
   }
 }
