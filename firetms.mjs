@@ -1,10 +1,10 @@
-import {createFiretmsWrites,firetmsWriteTools} from './firetms-writes.mjs';
+import {createFiretmsWrites,firetmsWriteTools,firetmsPreviewTools} from './firetms-writes.mjs';
 import https from 'node:https';
 
 const scope='firetms:read';
 const resources={trucks:'/internal-trucks',semitrailers:'/internal-semitrailers',orders:'/orders',loads:'/loads',contractors:'/contractors',departments:'/departments'};
 const schema=properties=>({type:'object',properties,additionalProperties:false});
-export {firetmsWriteTools};
+export {firetmsWriteTools,firetmsPreviewTools};
 export const firetmsTools=[
  {name:'firetms_list',description:'Odczytaj jedną stronę danych operacyjnych FireTMS: trucks, semitrailers, orders, loads, contractors lub departments. Paginacja od 1. Opcjonalny filter wyszukuje dokładny numer auta, naczepy lub referencję zlecenia. Wyniki nie są pełnym zestawieniem. Brak operacji finansowych i zapisów.',inputSchema:{...schema({resource:{type:'string',enum:Object.keys(resources)},page:{type:'integer',minimum:1,maximum:10000},size:{type:'integer',minimum:1,maximum:50},filter:{type:'string',maxLength:100}}),required:['resource']}},
  {name:'firetms_order',description:'Odczytaj szczegóły operacyjne zlecenia FireTMS według ID otrzymanego z listy orders. Zwraca m.in. punkty trasy i completionTimestamp, jeśli API je udostępnia. Nie utożsamiaj terminu planowanego z rzeczywistą godziną. Bez kwot, faktur i płatności.',inputSchema:{...schema({id:{type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'}}),required:['id']}}
@@ -47,7 +47,7 @@ export function createFiretms(env,transport=firetmsTransport){
  };
  const writes=createFiretmsWrites(env,request);
  return {async run(name,a){
-  if(firetmsWriteTools.some(t=>t.name===name)){
+  if([...firetmsPreviewTools,...firetmsWriteTools].some(t=>t.name===name)){
    const result=await writes.run(name,a);
    if(result.written){result.data=projectFiretms(result.data);result.verification=projectFiretms(result.verification);}
    return result;
@@ -80,3 +80,4 @@ export async function firetmsDiagnostic(env){
  try{await createFiretms(env).run('firetms_list',{resource:'trucks',size:1});console.log('FIRETMS_DIAGNOSTIC '+JSON.stringify({status:'connected',mode:'read-only'}));}
  catch(e){const reason=/^FireTMS HTTP \d{3}$/.test(e.message)?e.message:'connection_or_configuration_failed';console.log('FIRETMS_DIAGNOSTIC '+JSON.stringify({status:'failed',reason}));}
 }
+

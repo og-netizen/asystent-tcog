@@ -4,11 +4,26 @@ const schemas=JSON.parse(readFileSync(new URL('./firetms-schemas.json',import.me
 const obj=(properties,required=[])=>({type:'object',properties,required,additionalProperties:false});
 const id={type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'};
 const transportSchema=obj({truckId:id,loadIds:{type:'array',items:id,minItems:1,maxItems:30}},['truckId','loadIds']);
-export const firetmsWriteTools=[
- ['firetms_create_load','Utwórz zlecenie KLIENTA (load). Zgodnie z zasadą TCOG przychód tymczasowy wynosi 1 EUR i jest oznaczony do zmiany przy zamknięciu. Najpierw apply=false: walidacja i podgląd. apply=true z otrzymanym review_token wykonuje zapis. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie podawaj dowolnych cen, płatności ani faktur; serwer dodaje tylko uzgodnione tymczasowe 1 EUR.',obj({data:schemas.createLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
- ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące auto własne lub zewnętrzne z istniejących loadIds. Dla auta zewnętrznego powstaje zlecenie spedycyjne NEW bez potwierdzenia. FireTMS może potwierdzić transport własny i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw apply=false, potem apply=true z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['data'])],
- ['firetms_update_load','Przygotuj edycję zlecenia KLIENTA (loadId, nie ID zlecenia transportowego). data jest kompletnym zestawem pól operacyjnych, nie częściową łatką. Podgląd działa; wykonanie PUT jest domyślnie zablokowane, dopóki nie potwierdzimy z FireTMS zachowania pominiętej ceny. Nie zmienia przypisania auta. Nie obiecuj zapisu na podstawie samego podglądu.',obj({loadId:id,data:schemas.updateLoad,apply:{type:'boolean'},review_token:{type:'string',maxLength:100}},['loadId','data'])]
-].map(([name,description,inputSchema])=>({name,description,inputSchema,annotations:{readOnlyHint:false,destructiveHint:name==='firetms_update_load',idempotentHint:false,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:['firetms:read','firetms:write']}]}));
+const operations=[
+ ['firetms_create_load','Utwórz zlecenie KLIENTA (load). Zgodnie z zasadą TCOG przychód tymczasowy wynosi 1 EUR i jest oznaczony do zmiany przy zamknięciu. Najpierw firetms_preview_create_load, potem to narzędzie z otrzymanym review_token. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie podawaj dowolnych cen, płatności ani faktur; serwer dodaje tylko uzgodnione tymczasowe 1 EUR.',obj({data:schemas.createLoad,review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące auto własne lub zewnętrzne z istniejących loadIds. Dla auta zewnętrznego powstaje zlecenie spedycyjne NEW bez potwierdzenia. FireTMS może potwierdzić transport własny i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw firetms_preview_create_transport_order, potem to narzędzie z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_update_load','Wykonaj edycję zlecenia KLIENTA (loadId, nie ID zlecenia transportowego). data jest kompletnym zestawem pól operacyjnych, nie częściową łatką. Najpierw firetms_preview_update_load; wykonanie PUT jest domyślnie zablokowane, dopóki nie potwierdzimy z FireTMS zachowania pominiętej ceny. Nie zmienia przypisania auta. Nie obiecuj zapisu na podstawie samego podglądu.',obj({loadId:id,data:schemas.updateLoad,review_token:{type:'string',maxLength:100}},['loadId','data'])]
+];
+// Separate public contracts: preview never accepts an execution switch.
+export const firetmsPreviewTools=operations.map(([name,,schema])=>({
+ name:name.replace('firetms_','firetms_preview_'),
+ description:'Sprawdź i pokaż podgląd operacji '+name+'. Nie zapisuje danych w FireTMS. Zwraca review_token ważny 15 minut, związany z dokładnymi danymi. Wykonanie wymaga osobnego narzędzia zapisu i firetms:write. Dla edycji podgląd nie odblokowuje PUT.',
+ inputSchema:obj(Object.fromEntries(Object.entries(schema.properties).filter(([key])=>key!=='review_token')),schema.required),
+ annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:false,openWorldHint:true},
+ securitySchemes:[{type:'oauth2',scopes:['firetms:read']}]
+}));
+export const firetmsWriteTools=operations.map(([name,description,schema])=>({
+ name,
+ description:description+' Wymagany review_token z odpowiedniego firetms_preview_* oraz identyczne dane. To narzędzie wykonuje zapis i nie przyjmuje apply.',
+ inputSchema:obj(schema.properties,[...schema.required,'review_token']),
+ annotations:{readOnlyHint:false,destructiveHint:name==='firetms_update_load',idempotentHint:false,openWorldHint:true},
+ securitySchemes:[{type:'oauth2',scopes:['firetms:read','firetms:write']}]
+}));
 export function validate(value,s,path='data'){
  const fail=()=>{throw Error('FireTMS invalid '+path);};
  if(s.type==='object'){
@@ -86,14 +101,16 @@ export function createFiretmsWrites(env,request){
   if(name==='firetms_update_load')await findLoad(a.loadId);
  }
  return {async run(name,a){
-  const tool=firetmsWriteTools.find(t=>t.name===name);if(!tool)throw Error('FireTMS unknown tool');
+  const tool=[...firetmsPreviewTools,...firetmsWriteTools].find(t=>t.name===name);if(!tool)throw Error('FireTMS unknown tool');
   validate(a,tool.inputSchema,'arguments');
+  const preview=firetmsPreviewTools.some(t=>t.name===name);
+  name=name.replace('firetms_preview_','firetms_');
   if(JSON.stringify(a.data).length>50000)throw Error('FireTMS invalid payload size');
   if(name!=='firetms_create_transport_order')validateLoad(a.data);
   const path=name==='firetms_create_load'?'/loads':name==='firetms_update_load'?'/loads/'+a.loadId:'/transport-order';
   const method=name==='firetms_update_load'?'PUT':'POST';
   const params=name==='firetms_create_transport_order'?{}:{allowClientOrderNumberDuplicates:'false'};
-  if(!a.apply){
+  if(preview){
    for(const [k,v]of receipts)if(v.expires<Date.now())receipts.delete(k);
    if(receipts.size>=500)throw Error('FireTMS too many pending operations');
    const target=await preflight(name,a)||path;
@@ -122,3 +139,4 @@ export function createFiretmsWrites(env,request){
   }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: [A-Za-z0-9 ._:;-]*)?$/.test(e.message)){r.state='rejected';r.error=e.message;throw e;}throw Error('FireTMS write outcome unknown; '+(/^FireTMS HTTP [0-9]{3}/.test(e.message)?e.message:'inspect system before retry'));}
  }};
 }
+
