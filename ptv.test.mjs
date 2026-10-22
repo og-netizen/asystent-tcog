@@ -37,6 +37,7 @@ test('PTV requests require explicit OAuth scope; existing read tokens cannot use
  const rpc=async(scope,method,params)=>{const r=await fetch(base+'/mcp',{method:'POST',headers:{Authorization:'Bearer '+token(scope)},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});assert.equal(r.status,200);return r.json();};
  try{
   const listing=await rpc('ptv:read','tools/list');assert.deepEqual(listing.result.tools.map(t=>t.name),['ptv_status','ptv_geocode','ptv_route']);
+  const oldConnection=await rpc('firetms:read','tools/list');assert.equal(oldConnection.result.tools.filter(t=>t.name.startsWith('ptv_')).length,3);assert.ok(oldConnection.result.tools.filter(t=>t.name.startsWith('ptv_')).every(t=>t.securitySchemes[0].scopes.includes('ptv:read')));
   assert.equal((await rpc('firetms:read','tools/call',{name:'ptv_route',arguments:{waypoints:points}})).result.isError,true);assert.equal(calls,0);
   const ok=await rpc('ptv:read','tools/call',{name:'ptv_route',arguments:{waypoints:points}});assert.equal(JSON.parse(ok.result.content[0].text).distance_km,33);assert.equal(calls,1);assert.equal(JSON.stringify(ok).includes(env.PTV_API_KEY),false);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
