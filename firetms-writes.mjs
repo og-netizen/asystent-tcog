@@ -25,22 +25,22 @@ export const firetmsWriteTools=operations.map(([name,description,schema])=>({
  securitySchemes:[{type:'oauth2',scopes:['firetms:read','firetms:write']}]
 }));
 export function validate(value,s,path='data'){
- const fail=()=>{throw Error('FireTMS invalid '+path);};
+ const fail=(reason='value does not match schema')=>{throw Error('FireTMS validation failed at '+path+': '+reason);};
  if(s.type==='object'){
-  if(!value||typeof value!=='object'||Array.isArray(value))fail();
-  if(Object.keys(value).some(k=>!Object.hasOwn(s.properties,k)))fail();
-  for(const k of s.required||[])if(!Object.hasOwn(value,k))fail();
+  if(!value||typeof value!=='object'||Array.isArray(value))fail('expected object');
+  for(const k of Object.keys(value))if(!Object.hasOwn(s.properties,k))throw Error('FireTMS validation failed at '+path+'.'+k+': unknown field; accepted fields: '+Object.keys(s.properties).join(', '));
+  for(const k of s.required||[])if(!Object.hasOwn(value,k))throw Error('FireTMS validation failed at '+path+'.'+k+': required field missing');
   for(const [k,v]of Object.entries(value))validate(v,s.properties[k],path+'.'+k);
  }else if(s.type==='array'){
-  if(!Array.isArray(value)||value.length<(s.minItems??0)||value.length>(s.maxItems??100))fail();
+  if(!Array.isArray(value)||value.length<(s.minItems??0)||value.length>(s.maxItems??100))fail('expected array with '+(s.minItems??0)+' to '+(s.maxItems??100)+' items');
   value.forEach((v,i)=>validate(v,s.items,path+'.'+i));
  }else if(s.type==='string'){
-  if(typeof value!=='string'||value.length>(s.maxLength??2000)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)||(s.pattern&&!new RegExp(s.pattern).test(value)))fail();
+  if(typeof value!=='string'||value.length>(s.maxLength??2000)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)||(s.pattern&&!new RegExp(s.pattern).test(value)))fail('expected string'+(s.pattern?' matching '+s.pattern:'')+'; maximum length '+(s.maxLength??2000));
   if(s.format==='date-time'&&(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(value)||!Number.isFinite(Date.parse(value))))fail();
   if(s.format==='date-time'){const [y,m,d]=value.slice(0,10).split('-').map(Number);const dt=new Date(Date.UTC(y,m-1,d));if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d)fail();}
  }else if(s.type==='boolean'){if(typeof value!=='boolean')fail();}
  else if(['number','integer'].includes(s.type)){if(typeof value!=='number'||!Number.isFinite(value)||(s.type==='integer'&&!Number.isInteger(value)))fail();}
- if(s.enum&&!s.enum.includes(value))fail();
+ if(s.enum&&!s.enum.includes(value))fail('allowed values: '+s.enum.join(', '));
 }
 function validateLoad(d){
  if(!d.client||![d.client.id,d.client.taxId,d.client.vatEuId].some(v=>typeof v==='string'&&v.trim()))throw Error('FireTMS invalid client');
