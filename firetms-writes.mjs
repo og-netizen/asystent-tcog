@@ -65,11 +65,10 @@ function validateLoad(d){
 // Restart invalidates every receipt. For recovery inspect FireTMS before preparing another operation.
 export function createFiretmsWrites(env,request){
  const receipts=new Map();
- const truckCarriers=new Map();
  const provisionalNote='KWOTY TYMCZASOWE: przychód 1 EUR i koszt 1 EUR do ustalenia i zmiany przez agenta zamykającego zlecenie po wykonaniu przewozu. Nie są stawką ostateczną.';
  function payloadFor(name,a,target){
   if(name==='firetms_create_load')return {...a.data,price:{amount:1,currencyCode:'EUR'},internalNote:[a.data.internalNote,provisionalNote].filter(Boolean).join('\n')};
-  if(name==='firetms_create_transport_order'&&target==='/forwarding-order')return {...a.data,...(truckCarriers.get(a.data.truckId)?{carrierId:truckCarriers.get(a.data.truckId)}:{}),cost:{fixedAmount:1,currencyCode:'EUR'},notes:provisionalNote};
+  if(name==='firetms_create_transport_order'&&target==='/forwarding-order')return {...a.data,cost:{fixedAmount:1,currencyCode:'EUR'},notes:provisionalNote};
   return a.data;
  }
  const fingerprint=(n,a)=>createHash('sha256').update(JSON.stringify([n,a.loadId,a.data])).digest('hex');
@@ -92,7 +91,7 @@ export function createFiretmsWrites(env,request){
   }
   if(name==='firetms_create_transport_order'){
    let foundTruck=false,external=false;
-   for(const source of ['/internal-trucks','/external-trucks']){for(let page=1;page<=20;page++){const trucks=await request(source,{page:String(page),size:'50'});if(!Array.isArray(trucks.items))throw Error('FireTMS invalid trucks response');if(trucks.items.some(t=>t.id===a.data.truckId)){foundTruck=true;external=source==='/external-trucks';const carrierId=trucks.items.find(t=>t.id===a.data.truckId)?.carrierId;if(external&&carrierId)truckCarriers.set(a.data.truckId,carrierId);break;}if(trucks.items.length<50||trucks.maxPageNumber<=page)break;}if(foundTruck)break;}
+   for(const source of ['/internal-trucks','/external-trucks']){for(let page=1;page<=20;page++){const trucks=await request(source,{page:String(page),size:'50'});if(!Array.isArray(trucks.items))throw Error('FireTMS invalid trucks response');if(trucks.items.some(t=>t.id===a.data.truckId)){foundTruck=true;external=source==='/external-trucks';break;}if(trucks.items.length<50||trucks.maxPageNumber<=page)break;}if(foundTruck)break;}
    if(!foundTruck)throw Error('FireTMS truck not found');
    if(new Set(a.data.loadIds).size!==a.data.loadIds.length)throw Error('FireTMS invalid duplicate load ids');
    for(const loadId of a.data.loadIds){const l=await findLoad(loadId);if(l.carrierOrderNumber?.trim()||l.truckRegistrationNumber?.trim())throw Error('FireTMS load already assigned');}
