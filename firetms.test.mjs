@@ -134,7 +134,7 @@ test('External carrier truck creates an unconfirmed forwarding order and is disc
  });
  const read=await c.run('firetms_list',{resource:'trucks',filter:'WPR1810T'});assert.equal(read.data.items[0].id,'external-1');
  const data={truckId:'external-1',loadIds:['load-1']};const p=await c.run('firetms_preview_create_transport_order',{data});assert.equal(p.path,'/forwarding-order');
- const r=await c.run('firetms_create_transport_order',{data,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,{...data,carrierId:'carrier-1',cost:{fixedAmount:1,currencyCode:'EUR'},notes:writes[0].body.notes});assert.ok(writes[0].body.notes.includes('KWOTY TYMCZASOWE'));
+ const r=await c.run('firetms_create_transport_order',{data,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,{...data,cost:{fixedAmount:1,currencyCode:'EUR'},notes:writes[0].body.notes});assert.equal(writes[0].body.carrierId,undefined);assert.ok(writes[0].body.notes.includes('KWOTY TYMCZASOWE'));
 });
 test('Definite vendor validation rejection reports HTTP and field names and never repeats the attempt',async()=>{
  let posts=0;const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='GET')return {items:[]};posts++;throw Error('FireTMS HTTP 400 fields price');});
