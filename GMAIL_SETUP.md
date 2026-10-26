@@ -68,3 +68,28 @@ Implement reviewable filter previews and idempotent creation of approved native
 Gmail filters, then the persistent inbound queue and Niinivirta classifier.
 The current private instruction plugin contains client rules; they have not been
 automatically deployed as Gmail filters by this release.
+
+## ChatGPT MCP tools (0.8.3)
+
+The server now advertises `gmail_connection_status`, `gmail_list_labels`,
+`gmail_list_filters`, `gmail_preview_filter_change`, and
+`gmail_apply_filter_change`. Refresh the existing custom MCP app's tools.
+Authorize ChatGPT again with `gmail:read gmail:write` alongside the existing
+required FireTMS/PTV scopes; Google mailbox consent is separate and is retained.
+Existing FireTMS tokens can discover Gmail descriptors when the mailbox is
+configured, but cannot read or change Gmail until the new scopes are granted.
+
+Writes require a read-only preview and a single-use, 15-minute review receipt.
+Only existing custom labels under `TCOG/` can be added or removed. Forwarding,
+mail sending, archiving, read/unread changes, spam/trash actions and arbitrary
+Google endpoints are not exposed. Replacement uses create then delete because
+Gmail has no filter-update method. The old filter must be unchanged since
+preview and must use only TCOG label actions. Read back the actual filters after
+any uncertain write before preparing another attempt. Review receipts are
+in-memory and expire on process restart; this cannot start an automatic retry.
+
+No filters are installed just by deploying the tools. No watcher, classifier,
+queue or historical-mail backfill is started. Native Gmail queries do not offer
+regular expressions or a guaranteed PDF parser, and matching filters have no
+priority order. Niinivirta context and exact OHL PDF reference validation still
+need the later mail-processing worker.

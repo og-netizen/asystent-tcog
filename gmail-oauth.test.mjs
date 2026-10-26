@@ -97,3 +97,12 @@ test('Google rejects wrong mailbox, missing scopes and vendor-secret error bodie
   try{const flow=await connect(app);const r=await app.request('/google/oauth/callback?state='+flow.url.searchParams.get('state')+'&code=secret',{headers:{Cookie:flow.cookie}});assert.equal(r.status,400);const h=await r.text();assert.equal(h.includes('RAW_SECRET'),false);assert.equal(h.includes('<textarea'),false);if(failure!=='vendor')assert.ok(h.includes(failure));}finally{await app.close();}
  }
 });
+
+test('Stored Gmail credential only reaches fixed profile, label and filter endpoints; empty DELETE works',async()=>{
+ const configured={...env,GOOGLE_GMAIL_REFRESH_TOKEN_ENCRYPTED:gmailVault(env.OAUTH_CLIENT_SECRET,env.PUBLIC_URL).seal('refresh-token',{clientId:env.GOOGLE_GMAIL_CLIENT_ID,email:'og@tcog.pl',refreshToken:'fake-refresh',scope:GMAIL_SCOPES.join(' ')})};
+ const calls=[];const oauth=createGmailOAuth(configured,{fetchImpl:async(url,o)=>{calls.push({url,method:o.method||'GET'});if(url.endsWith('/token'))return new Response(JSON.stringify({access_token:'fake-access',scope:GMAIL_SCOPES.join(' ')}));if(url.endsWith('/profile'))return new Response(JSON.stringify({emailAddress:'og@tcog.pl'}));assert.equal(o.headers.Authorization,'Bearer fake-access');if(o.method==='DELETE')return new Response(null,{status:204});return new Response(JSON.stringify(url.endsWith('/labels')?{labels:[]}:{filter:[]}));}});
+ assert.deepEqual(await oauth.request('GET','labels'),{labels:[]});assert.deepEqual(await oauth.request('DELETE','settings/filters/abc-123'),{});
+ const before=calls.filter(c=>!c.url.endsWith('/token')&&!c.url.endsWith('/profile')).length;
+ for(const [m,p]of [['POST','messages/send'],['GET','../../evil'],['DELETE','messages/123'],['POST','labels']])await assert.rejects(oauth.request(m,p),/google_destination/);
+ assert.equal(calls.filter(c=>!c.url.endsWith('/token')&&!c.url.endsWith('/profile')).length,before);
+});

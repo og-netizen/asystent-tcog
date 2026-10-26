@@ -60,9 +60,12 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
  async function google(url,options) {
   // Fixed destinations only. Never follow redirects with client secrets/tokens.
   const allowed=['https://oauth2.googleapis.com/token','https://gmail.googleapis.com/gmail/v1/users/me/profile'];
-  if(!allowed.includes(url))throw Error('google_destination');
+  const gmailPath=url.startsWith('https://gmail.googleapis.com/gmail/v1/users/me/')?url.slice('https://gmail.googleapis.com/gmail/v1/users/me/'.length):'';
+  const method=options.method||'GET';
+  if(!allowed.includes(url)&&!((method==='GET'&&['labels','settings/filters'].includes(gmailPath))||(method==='POST'&&gmailPath==='settings/filters')||(method==='DELETE'&&/^settings\/filters\/[A-Za-z0-9_-]{1,256}$/.test(gmailPath))))throw Error('google_destination');
   const response=await fetchImpl(url,{...options,redirect:'error',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Error('google_http_'+response.status);
+  if(response.status===204)return {};
   const data=await response.json();if(!data||typeof data!=='object'||Array.isArray(data))throw Error('google_response');return data;
  }
  async function profile(accessToken) {
@@ -74,13 +77,19 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
  function validateScopes(scope) {
   if(typeof scope!=='string'||!GMAIL_SCOPES.every(s=>scope.split(' ').includes(s)))throw Error('missing_scopes');
  }
- async function checkSaved() {
+ async function accessSaved() {
   const data=vault.open('refresh-token',env.GOOGLE_GMAIL_REFRESH_TOKEN_ENCRYPTED);
   if(!data||data.clientId!==clientId||data.email!==email||typeof data.refreshToken!=='string')throw Error('no_saved_token');
   validateScopes(data.scope);
   const token=await google('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'refresh_token',client_id:clientId,client_secret:clientSecret,refresh_token:data.refreshToken})});
   if(token.scope)validateScopes(token.scope);
-  return profile(token.access_token);
+  await profile(token.access_token);return token.access_token;
+ }
+ async function checkSaved(){return profile(await accessSaved());}
+ async function request(method,path,body){
+  // The allowlist in google() bounds every call, including future callers.
+  const access=await accessSaved();
+  return google('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{method,headers:{Authorization:'Bearer '+access,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
  }
  async function handle(req,res,url) {
   if(!url.pathname.startsWith('/google/'))return false;
@@ -134,5 +143,5 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
    return page(res,400,'Nie ukończono połączenia Gmail',`<p>${escape(messages[code]||'Połączenie z Google nie powiodło się. Sprawdź Gmail API, dane OAuth i dokładny adres przekierowania.')}</p><p>Kod: ${escape(code)}</p><p><a href="/google/oauth/start">Wróć do połączenia</a></p>`);
   }
  }
- return {handle,checkSaved,redirectUri};
+ return {handle,checkSaved,request,redirectUri};
 }
