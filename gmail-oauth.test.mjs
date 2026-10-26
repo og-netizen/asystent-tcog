@@ -5,7 +5,7 @@ import {createFreePilot} from './pilot/free-start.mjs';
 import {createGmailOAuth,gmailVault,GMAIL_SCOPES} from './gmail-oauth.mjs';
 
 const env={NODE_ENV:'test',PUBLIC_URL:'http://127.0.0.1',ADMIN_PASSWORD:'a'.repeat(40),OAUTH_CLIENT_SECRET:'s'.repeat(40),WFIRMA_COMPANY_ID:'1785731',WFIRMA_ACCESS_KEY:'fake',WFIRMA_SECRET_KEY:'fake',WFIRMA_APP_KEY:'fake',GOOGLE_GMAIL_CLIENT_ID:'test.apps.googleusercontent.com',GOOGLE_GMAIL_CLIENT_SECRET:'test-client-secret'};
-const jar=r=>r.headers.get('set-cookie').split(';')[0];
+const jar=r=>r.headers.get('set-cookie')?.split(';')[0]||'';
 async function start(config=env,vendor=async()=>{throw Error('Unexpected vendor request');}) {
  const server=createApp(config,undefined,{gmailOAuth:{fetchImpl:vendor}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -46,7 +46,12 @@ test('Google requires admin, same origin and CSRF; emits PKCE/offline and reject
   assert.equal((await post('https://evil.example',jar(page),env.ADMIN_PASSWORD)).status,403);
   assert.equal((await post('null',jar(page),env.ADMIN_PASSWORD)).status,403);
   assert.equal((await post(undefined,jar(page),env.ADMIN_PASSWORD)).status,403);
-  assert.equal((await post(env.PUBLIC_URL,undefined,env.ADMIN_PASSWORD)).status,400);
+  assert.equal((await post(env.PUBLIC_URL,undefined,env.ADMIN_PASSWORD,'')).status,400);
+  assert.equal((await post(env.PUBLIC_URL,undefined,'bad')).status,403);
+  const anotherPage=await app.request('/google/oauth/start');
+  assert.equal(anotherPage.headers.get('set-cookie'),null);
+  const independent=await post(env.PUBLIC_URL,undefined,env.ADMIN_PASSWORD);
+  assert.equal(independent.status,303); // Older form still works after another tab opens.
   assert.equal((await post(env.PUBLIC_URL,jar(page),env.ADMIN_PASSWORD,'bad')).status,400);
   assert.equal((await post(env.PUBLIC_URL,jar(page),'bad')).status,403);
   const flow=await connect(app);assert.equal(flow.url.origin,'https://accounts.google.com');

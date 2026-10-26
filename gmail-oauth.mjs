@@ -48,7 +48,9 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
   res.end(`<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escape(title)}</title><main><h1>${escape(title)}</h1>${content}</main></html>`);
  };
  const form=(res,notice='')=>{
-  const csrf=random();cookie(res,vault.seal('bootstrap',{csrf,exp:now()+900000,binding}));
+  // A sealed form ticket plus strict same-origin POST protects bootstrap.
+  // Do not overwrite the OAuth callback cookie when another tab opens.
+  const csrf=vault.seal('bootstrap',{nonce:random(),exp:now()+900000,binding});
   return page(res,200,'Połączenie Gmail TCOG',`${notice?'<p>'+escape(notice)+'</p>':''}<p>Skrzynka: <strong>${escape(email)}</strong>.</p><p>Dostęp obejmie odczyt poczty, nadawanie etykiet oraz zarządzanie filtrami. Ten etap nie uruchamia agenta, nie wysyła wiadomości i nie zmienia filtrów.</p><form action="/google/oauth/start" method="post"><input type="hidden" name="csrf" value="${csrf}"><label>Hasło integracji TCOG (ADMIN_PASSWORD, nie hasło Google): <input name="password" type="password" required autocomplete="current-password"></label><button name="action" value="connect" type="submit">Połącz z Google</button><button name="action" value="check" type="submit">Sprawdź zapisane połączenie</button></form>`);
  };
  const liveFlow=(purpose,req)=>{
@@ -95,8 +97,8 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
    if(req.method==='POST'&&url.pathname==='/google/oauth/start') {
     if(req.headers.origin!==origin)return json(res,403,{error:'origin_required'});
     let raw='',size=0;for await(const chunk of req){size+=chunk.length;if(size>12000)return json(res,413,{error:'body_too_large'});raw+=chunk;}
-    const fields=new URLSearchParams(raw),flow=liveFlow('bootstrap',req);
-    if(!flow||!equal(fields.get('csrf')||'',flow.csrf))return page(res,400,'Sesja wygasła','<p>Otwórz ponownie <a href="/google/oauth/start">połączenie Gmail</a>.</p>');
+    const fields=new URLSearchParams(raw),flow=vault.open('bootstrap',fields.get('csrf'));
+    if(!flow||flow.binding!==binding||flow.exp<=now()||flow.exp>now()+900000)return page(res,400,'Sesja wygasła','<p>Otwórz ponownie <a href="/google/oauth/start">połączenie Gmail</a>.</p>');
     attempts=attempts.filter(t=>t>now()-900000);if(attempts.length>=10)return json(res,429,{error:'Odczekaj 15 minut.'});
     if(!equal(fields.get('password')||'',env.ADMIN_PASSWORD)){attempts.push(now());return page(res,403,'Niepoprawne hasło','<p>Użyj hasła integracji TCOG. <a href="/google/oauth/start">Wróć</a>.</p>');}
     if(fields.get('action')==='check') {
