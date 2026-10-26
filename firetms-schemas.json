@@ -43,7 +43,11 @@
                       "format": "double"
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": false,
+                  "required": [
+                    "latitude",
+                    "longitude"
+                  ]
                 },
                 "descriptionCMR": {
                   "type": "string",
@@ -62,7 +66,10 @@
                   "maxLength": 2000
                 }
               },
-              "additionalProperties": false
+              "additionalProperties": false,
+              "required": [
+                "addressType"
+              ]
             },
             "cargoHandlingType": {
               "type": "string",
@@ -102,13 +109,16 @@
                     "maxLength": 2000
                   },
                   "height": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "ldm": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "length": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "loadSizeType": {
                     "type": "string",
@@ -123,7 +133,8 @@
                     "type": "boolean"
                   },
                   "quantity": {
-                    "type": "number"
+                    "type": "number",
+                    "exclusiveMinimum": 0
                   },
                   "referenceCode": {
                     "type": "string",
@@ -134,13 +145,20 @@
                     "maxLength": 2000
                   },
                   "weight": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "width": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   }
                 },
-                "additionalProperties": false
+                "additionalProperties": false,
+                "required": [
+                  "cargoName",
+                  "quantity",
+                  "unitName"
+                ]
               },
               "maxItems": 100
             },
@@ -175,9 +193,15 @@
               "additionalProperties": false
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "required": [
+            "address",
+            "cargoHandlingType",
+            "term"
+          ]
         },
-        "maxItems": 100
+        "maxItems": 30,
+        "minItems": 2
       },
       "client": {
         "type": "object",
@@ -308,7 +332,8 @@
     "additionalProperties": false,
     "required": [
       "client",
-      "cargoHandlings"
+      "cargoHandlings",
+      "receptionDate"
     ]
   },
   "updateLoad": {
@@ -355,7 +380,11 @@
                       "format": "double"
                     }
                   },
-                  "additionalProperties": false
+                  "additionalProperties": false,
+                  "required": [
+                    "latitude",
+                    "longitude"
+                  ]
                 },
                 "descriptionCMR": {
                   "type": "string",
@@ -374,7 +403,10 @@
                   "maxLength": 2000
                 }
               },
-              "additionalProperties": false
+              "additionalProperties": false,
+              "required": [
+                "addressType"
+              ]
             },
             "cargoHandlingType": {
               "type": "string",
@@ -414,13 +446,16 @@
                     "maxLength": 2000
                   },
                   "height": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "ldm": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "length": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "loadSizeType": {
                     "type": "string",
@@ -435,7 +470,8 @@
                     "type": "boolean"
                   },
                   "quantity": {
-                    "type": "number"
+                    "type": "number",
+                    "exclusiveMinimum": 0
                   },
                   "referenceCode": {
                     "type": "string",
@@ -446,13 +482,20 @@
                     "maxLength": 2000
                   },
                   "weight": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   },
                   "width": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                   }
                 },
-                "additionalProperties": false
+                "additionalProperties": false,
+                "required": [
+                  "cargoName",
+                  "quantity",
+                  "unitName"
+                ]
               },
               "maxItems": 100
             },
@@ -487,9 +530,15 @@
               "additionalProperties": false
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "required": [
+            "address",
+            "cargoHandlingType",
+            "term"
+          ]
         },
-        "maxItems": 100
+        "maxItems": 30,
+        "minItems": 2
       },
       "client": {
         "type": "object",

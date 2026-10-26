@@ -1,27 +1,44 @@
 import {createFiretmsWrites,firetmsWriteTools,firetmsPreviewTools} from './firetms-writes.mjs';
 import https from 'node:https';
+import {randomUUID} from 'node:crypto';
 
 const scope='firetms:read';
-const resources={trucks:'/internal-trucks',semitrailers:'/internal-semitrailers',orders:'/orders',loads:'/loads',contractors:'/contractors',departments:'/departments'};
+const resources={trucks:'/internal-trucks',semitrailers:'/internal-semitrailers',orders:'/orders',loads:'/loads',contractors:'/contractors',departments:'/departments',units:'/unit-of-measure'};
 const schema=properties=>({type:'object',properties,additionalProperties:false});
 export {firetmsWriteTools,firetmsPreviewTools};
 export const firetmsTools=[
- {name:'firetms_list',description:'Odczytaj jedną stronę danych operacyjnych FireTMS: trucks, semitrailers, orders, loads, contractors lub departments. Paginacja od 1. Opcjonalny filter wyszukuje dokładny numer auta, naczepy lub referencję zlecenia. Wyniki nie są pełnym zestawieniem. Brak operacji finansowych i zapisów.',inputSchema:{...schema({resource:{type:'string',enum:Object.keys(resources)},page:{type:'integer',minimum:1,maximum:10000},size:{type:'integer',minimum:1,maximum:50},filter:{type:'string',maxLength:100}}),required:['resource']}},
+ {name:'firetms_list',description:'Odczytaj jedną stronę danych operacyjnych FireTMS: trucks, semitrailers, orders, loads, contractors, departments lub units (słownik jednostek; defaultName służy jako unitName). Paginacja od 1. Opcjonalny filter wyszukuje numer auta, naczepy, referencję zlecenia lub jednostkę. Wyniki nie są pełnym zestawieniem. Brak operacji finansowych i zapisów.',inputSchema:{...schema({resource:{type:'string',enum:Object.keys(resources)},page:{type:'integer',minimum:1,maximum:10000},size:{type:'integer',minimum:1,maximum:50},filter:{type:'string',maxLength:100}}),required:['resource']}},
  {name:'firetms_order',description:'Odczytaj szczegóły operacyjne zlecenia FireTMS według ID otrzymanego z listy orders. Zwraca m.in. punkty trasy i completionTimestamp, jeśli API je udostępnia. Nie utożsamiaj terminu planowanego z rzeczywistą godziną. Bez kwot, faktur i płatności.',inputSchema:{...schema({id:{type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'}}),required:['id']}}
 ].map(t=>({...t,annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:[scope]}]}));
 
 // Explicit operational field allowlist, recursively applied. Unknown fields fail closed.
 const allowed=new Set(('zipCode companyName taxId vatEuId contactPersons firstName lastName streetWithNumber zipcode carrierId driverAppPhoneNumber driverId secondDriverId semitrailerId truckId description from to emptyKilometers loadedKilometers distance eta odometer truckPositionCoordinate items maxPageNumber paging totalItems firstItemIndex pageNumber pageSize id regNumber adr depot numberOfPallets truckGroupName vehicleSideNumber type atsStatus cargoNames carrierName client clientOrderNumbers clientOrderSpeditors completionRiskDto contactPerson contactPhone createDate departmentName driverName emptyKm firstLoading lastUnloading loadedKm mileageOutsideCorridor orderNumber realEmptyMileage realLoadedMileage realMileage secondDriverName semitrailerRegistrationNumber speditor status subStatuses tags totalKm totalLdm totalWeightInKg truckRegistrationNumber truckStatus loadingsDescription unloadingsDescription assignedLoads completionRisk creationDate departmentId realTotalKilometers routePoints temperatureRange totalKilometers totalKilometersOffRoute transportSet address completionTimestamp coordinate end monitoring start term termComment country countryCode postalCode city street buildingNumber name latitude longitude lat lon truck semitrailer driver secondDriver min max loaded empty total cargoNamesWithDescriptions carrierOrderNumber clientSideOrderNumber department dimensions loadingsDescr orderCreateDate statusDescription totalWeight unloadingsDescr').split(' '));
+for(const field of ['defaultName','defaultUnit','carrier','deleted','grade','defaultDriverId','defaultSemitrailerId'])allowed.add(field);
 export function projectFiretms(value,depth=0){
  if(depth>15)throw Error('FireTMS response too deep');
  if(Array.isArray(value))return value.map(v=>projectFiretms(v,depth+1));
  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>allowed.has(k)).map(([k,v])=>[k,projectFiretms(v,depth+1)]));
  return value;
 }
+export function firetmsHttpFailure(raw,status,key,{method,path,operationId}={}){
+ const redact=s=>String(s).split(key).join('REDACTED');
+ let body;
+ try{
+  const parsed=JSON.parse(raw);
+  body=Object.fromEntries(['message','errors','warns','errorCode','code','type','title','detail','instance','request_id','requestId','traceId','timestamp'].filter(k=>parsed?.[k]!==undefined).map(k=>[k,parsed[k]]));
+ }catch{body={message:'Non-JSON vendor response; inspect private service logs'};}
+ const serialized=redact(JSON.stringify(body));
+ const diagnostic={http_status:status,method,path,operation_id:operationId,...(serialized.length<=16000?{body:JSON.parse(serialized)}:{body_excerpt:serialized.slice(0,16000),body_truncated:true})};
+ const requestId=body?.request_id??body?.requestId;
+ const safeId=typeof requestId==='string'&&/^[A-Za-z0-9-]{1,100}$/.test(requestId)?requestId:undefined;
+ const detail=serialized.replace(/[^A-Za-z0-9 ._:;-]/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
+ const error=Error('FireTMS HTTP '+status+(safeId?' request_id '+redact(safeId):'')+' detail '+detail);
+ error.firetms=diagnostic;return error;
+}
 export function firetmsTransport(url,key,method='GET',body){
  if(url.origin!=='https://app.firetms.com'||!url.pathname.startsWith('/api/'))throw Error('FireTMS unsafe URL');
  if(!['GET','POST','PUT'].includes(method)||((method==='POST'&&!['/api/loads','/api/transport-order','/api/forwarding-order'].includes(url.pathname))||(method==='PUT'&&!/^\/api\/loads\/[A-Za-z0-9-]{1,80}$/.test(url.pathname))))throw Error('FireTMS unsafe method');
- const payload=body===undefined?undefined:JSON.stringify(body);
+ const payload=body===undefined?undefined:JSON.stringify(body),operationId=randomUUID();
  return new Promise((resolve,reject)=>{
   const req=https.request(url,{method,headers:{apikey:key,Accept:'application/json',...(payload?{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}:{})}},res=>{
    const chunks=[];let size=0;
@@ -29,7 +46,10 @@ export function firetmsTransport(url,key,method='GET',body){
    res.on('error',()=>reject(Error('FireTMS response failed')));
    res.on('end',()=>{
     const raw=Buffer.concat(chunks).toString('utf8');
-    if(res.statusCode<200||res.statusCode>=300){if(method!=='GET')console.error('FIRETMS_WRITE_HTTP_RESPONSE '+JSON.stringify({timestamp:new Date().toISOString(),method,path:url.pathname,httpVersion:res.httpVersion,statusCode:res.statusCode,statusMessage:res.statusMessage,headers:Object.fromEntries(Object.entries(res.headers).filter(([name])=>!['set-cookie','authorization','apikey','proxy-authenticate','www-authenticate'].includes(name))),body:raw.split(key).join('REDACTED')}));const fields=['price','currencyCode','amount','cargoHandlings','cargoHandlingType','cargos','weight','quantity','address','addressType','zipCode','city','companyName','coordinate','term','client','contactPerson','requirements','receptionDate','departmentId'].filter(k=>new RegExp('\\b'+k+'\\b','i').test(raw));let source=raw;try{const parsed=JSON.parse(raw);const relevant=Object.fromEntries(['message','errors','errorCode','code','detail','error','exception','traceId','requestId'].filter(k=>parsed[k]!==undefined).map(k=>[k,parsed[k]]));if(Object.keys(relevant).length)source=JSON.stringify(relevant);}catch{}const detail=source.split(key).join('REDACTED').replace(/[^A-Za-z0-9 ._:;-]/g,' ').replace(/\s+/g,' ').trim().slice(0,350);return reject(Error('FireTMS HTTP '+res.statusCode+(fields.length?' fields '+fields.join(' '):'')+' detail '+detail));}
+    if(res.statusCode<200||res.statusCode>=300){
+     if(method!=='GET')console.error('FIRETMS_WRITE_HTTP_RESPONSE '+JSON.stringify({timestamp:new Date().toISOString(),operationId,method,path:url.pathname,query:url.search,httpVersion:res.httpVersion,statusCode:res.statusCode,statusMessage:res.statusMessage,headers:Object.fromEntries(Object.entries(res.headers).filter(([name])=>!['set-cookie','authorization','apikey','proxy-authenticate','www-authenticate'].includes(name))),requestBody:payload?.split(key).join('REDACTED'),body:raw.split(key).join('REDACTED')}));
+     return reject(firetmsHttpFailure(raw,res.statusCode,key,{method,path:url.pathname,operationId}));
+    }
     try{resolve(size?JSON.parse(raw):{});}catch{reject(Error('FireTMS invalid JSON'));}
    });
   });
@@ -60,7 +80,7 @@ export function createFiretms(env,transport=firetmsTransport){
    path=resources[a.resource];params=a.resource==='contractors'?{page:String(page),pageSize:String(size)}:{page:String(page),size:String(size)};
    if(a.filter!==undefined){
     if(typeof a.filter!=='string'||! /^[A-Za-z0-9 /_.-]{1,100}$/.test(a.filter))throw Error('FireTMS invalid filter');
-    const field={trucks:'regNumber',semitrailers:'regNumber',orders:'clientOrderNumber',loads:'clientSideOrderNumber',departments:'name'}[a.resource];
+    const field={trucks:'regNumber',semitrailers:'regNumber',orders:'clientOrderNumber',loads:'clientSideOrderNumber',departments:'name',units:'searchField'}[a.resource];
     if(a.resource==='contractors')params.taxId=a.filter;else params.query=field+'=="'+a.filter+'"';
    }
   }else if(name==='firetms_order'){
