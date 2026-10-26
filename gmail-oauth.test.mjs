@@ -41,9 +41,10 @@ test('Google requires admin, same origin and CSRF; emits PKCE/offline and reject
  const app=await start();
  try{
   assert.equal((await app.request('/google/oauth/callback?code=secret')).status,400);
-  const page=await app.request('/google/oauth/start');const html=await page.text(),csrf=html.match(/name="csrf" value="([^"]+)"/)[1];
+  const page=await app.request('/google/oauth/start');assert.equal(page.headers.get('referrer-policy'),'same-origin');const html=await page.text(),csrf=html.match(/name="csrf" value="([^"]+)"/)[1];
   const post=(origin,cookie,password,token=csrf)=>app.request('/google/oauth/start',{method:'POST',headers:{...(origin?{Origin:origin}:{}),...(cookie?{Cookie:cookie}:{})},body:new URLSearchParams({csrf:token,password,action:'connect'})});
   assert.equal((await post('https://evil.example',jar(page),env.ADMIN_PASSWORD)).status,403);
+  assert.equal((await post('null',jar(page),env.ADMIN_PASSWORD)).status,403);
   assert.equal((await post(undefined,jar(page),env.ADMIN_PASSWORD)).status,403);
   assert.equal((await post(env.PUBLIC_URL,undefined,env.ADMIN_PASSWORD)).status,400);
   assert.equal((await post(env.PUBLIC_URL,jar(page),env.ADMIN_PASSWORD,'bad')).status,400);

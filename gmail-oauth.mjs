@@ -83,7 +83,9 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
  async function handle(req,res,url) {
   if(!url.pathname.startsWith('/google/'))return false;
   res.setHeader('Cache-Control','no-store, private');res.setHeader('Pragma','no-cache');
-  res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
+  // no-referrer makes browser form POSTs send Origin: null. Keep the
+  // login form same-origin while suppressing callback URL disclosure.
+  res.setHeader('Referrer-Policy',url.pathname==='/google/oauth/start'?'same-origin':'no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
   try {
    for(const [id,exp]of consumed)if(exp<=now())consumed.delete(id);
