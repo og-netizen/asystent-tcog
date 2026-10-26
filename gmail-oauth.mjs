@@ -88,7 +88,7 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
   // no-referrer makes browser form POSTs send Origin: null. Keep the
   // login form same-origin while suppressing callback URL disclosure.
   res.setHeader('Referrer-Policy',url.pathname==='/google/oauth/start'?'same-origin':'no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');
-  res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'");
   try {
    for(const [id,exp]of consumed)if(exp<=now())consumed.delete(id);
    if(req.headers.origin&&req.headers.origin!==origin)return json(res,403,{error:'origin_not_allowed'});

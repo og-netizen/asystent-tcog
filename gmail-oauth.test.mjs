@@ -16,7 +16,7 @@ async function connect(app){
  const page=await app.request('/google/oauth/start');assert.equal(page.status,200);
  const html=await page.text();const csrf=html.match(/name="csrf" value="([^"]+)"/)[1];
  const response=await app.request('/google/oauth/start',{method:'POST',headers:{Origin:env.PUBLIC_URL,Cookie:jar(page)},body:new URLSearchParams({csrf,password:env.ADMIN_PASSWORD,action:'connect'})});
- assert.equal(response.status,303);return {cookie:jar(response),url:new URL(response.headers.get('location'))};
+ assert.equal(response.status,303);assert.ok(response.headers.get('content-security-policy').includes("form-action 'self' https://accounts.google.com;"));return {cookie:jar(response),url:new URL(response.headers.get('location'))};
 }
 test('Google encryption is tamper, origin and purpose bound',()=>{
  const v=gmailVault(env.OAUTH_CLIENT_SECRET,env.PUBLIC_URL),sealed=v.seal('refresh-token',{refreshToken:'sensitive'});
@@ -41,7 +41,7 @@ test('Google requires admin, same origin and CSRF; emits PKCE/offline and reject
  const app=await start();
  try{
   assert.equal((await app.request('/google/oauth/callback?code=secret')).status,400);
-  const page=await app.request('/google/oauth/start');assert.equal(page.headers.get('referrer-policy'),'same-origin');const html=await page.text(),csrf=html.match(/name="csrf" value="([^"]+)"/)[1];
+  const page=await app.request('/google/oauth/start');assert.equal(page.headers.get('referrer-policy'),'same-origin');assert.ok(page.headers.get('content-security-policy').includes("form-action 'self' https://accounts.google.com;"));const html=await page.text(),csrf=html.match(/name="csrf" value="([^"]+)"/)[1];
   const post=(origin,cookie,password,token=csrf)=>app.request('/google/oauth/start',{method:'POST',headers:{...(origin?{Origin:origin}:{}),...(cookie?{Cookie:cookie}:{})},body:new URLSearchParams({csrf:token,password,action:'connect'})});
   assert.equal((await post('https://evil.example',jar(page),env.ADMIN_PASSWORD)).status,403);
   assert.equal((await post('null',jar(page),env.ADMIN_PASSWORD)).status,403);
