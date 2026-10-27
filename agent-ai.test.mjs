@@ -17,6 +17,37 @@ async function fixture(store,modelCall){await store.initialize();await store.age
  const oauth={checkSaved:async()=>({emailAddress:'operator@example.com'}),request:async(m,path)=>{assert.equal(m,'GET');assert.equal(path,'messages/a1?format=full');return structuredClone(msg);}};
  return {api:createAgentAI(store,oauth,{read:async()=>({...config}),status:async()=>({configured:true,model:config.model})},'A',{modelCall}),oauth};}
 const input={task_id:taskId,client_key:'example',truck_registration:'ABC123'};
+async function pdfFixture(store,modelCall,{complete=true}={}){
+ const {oauth}=await fixture(store,modelCall);let reads=0;
+ const message={...structuredClone(msg),payload:{mimeType:'multipart/mixed',parts:[structuredClone(msg.payload),{partId:'1',mimeType:'application/pdf',filename:'example.pdf',body:{size:40,attachmentId:'initial'}}]}};
+ let bytes=Buffer.from('%PDF-1.4 synthetic document version one');
+ oauth.request=async(method,path)=>{assert.equal(method,'GET');if(path==='messages/a1?format=full'){const copy=structuredClone(message);copy.payload.parts[1].body.attachmentId='rotating-'+(++reads);return copy;}assert.match(path,/^messages\/a1\/attachments\/rotating-\d+$/);return {data:bytes.toString('base64url')};};
+ const options={pdfExtract:async()=>({text:'Example PDF warehouse, Street 2. Reference EX123.',complete,pages:1}),modelCall};
+ const setup={read:async()=>({...config})};
+ return {api:createAgentAI(store,oauth,setup,'A',options),restart:()=>createAgentAI(store,oauth,setup,'A',options),message,setBytes:x=>{bytes=Buffer.from(x);}};
+}
+for(const backend of ['memory','postgres'])test(backend+': rotating Gmail attachment handles preserve preview identity and charge only once',async()=>{
+ const db=backend==='postgres'?new PGlite():null,pool=db?{query:(s,p)=>p?db.query(s,p):db.exec(s).then(x=>x.at(-1))}:null,store=pool?createPostgresStateStore(pool):createMemoryStateStore();let calls=0;
+ try{
+  const f=await pdfFixture(store,async(c,request)=>{calls++;const source=request.data.sources.find(s=>s.id.startsWith('pdf:'));return {draft:{...structuredClone(draft),stops:[{...structuredClone(draft.stops[0]),evidence:[{source_id:source.id,quote:'Example PDF warehouse, Street 2'}]}]},usage:{input_tokens:100,output_tokens:200}};});
+  const first=await f.api.run('agent_preview_draft',input),second=await f.api.run('agent_preview_draft',input);assert.equal(first.operation_id,second.operation_id);assert.equal(calls,0);
+  const result=await f.restart().run('agent_generate_draft',{review_token:first.review_token});assert.equal(result.operation.state,'DONE');assert.equal(calls,1);
+  const replay=await f.restart().run('agent_generate_draft',{review_token:second.review_token});assert.equal(replay.cached,true);assert.equal(calls,1);
+ }finally{if(db)await db.close();}
+});
+test('real PDF bytes, filename or mail changes invalidate preview before any model call',async()=>{
+ for(const change of [f=>f.setBytes('%PDF-1.4 synthetic document version two'),f=>{f.message.payload.parts[1].filename='replacement.pdf';},f=>{f.message.payload.parts[0].body.data=Buffer.from('Changed loading date and address').toString('base64url');}]){
+  let calls=0;const f=await pdfFixture(createMemoryStateStore(),async()=>{calls++;return {draft};});const preview=await f.api.run('agent_preview_draft',input);change(f);
+  await assert.rejects(f.api.run('agent_generate_draft',{review_token:preview.review_token}),/context changed/);assert.equal(calls,0);
+ }
+});
+test('incomplete PDFs still block preview unless explicitly ignored by stable attachment identity',async()=>{
+ let calls=0;const f=await pdfFixture(createMemoryStateStore(),async(c,request)=>{calls++;assert.ok(!request.data.sources.some(s=>s.id.startsWith('pdf:')));return {draft:structuredClone(draft)};},{complete:false});
+ await assert.rejects(f.api.run('agent_preview_draft',input),/unresolved attachments/);
+ const bundle=await f.api.run('agent_sources',{task_id:taskId});assert.equal(bundle.complete,false);
+ const preview=await f.api.run('agent_preview_draft',{...input,ignored_attachment_ids:[bundle.unresolved[0].id]});
+ const result=await f.api.run('agent_generate_draft',{review_token:preview.review_token});assert.equal(result.operation.state,'DONE');assert.equal(calls,1);
+});
 for(const backend of ['memory','postgres'])test(backend+': model preview is free, duplicate calls charge once, daily quota and restart reuse are durable',async()=>{
  const db=backend==='postgres'?new PGlite():null,pool=db?{query:(s,p)=>p?db.query(s,p):db.exec(s).then(x=>x.at(-1))}:null,store=pool?createPostgresStateStore(pool):createMemoryStateStore();let calls=0;
  const vendor=async(c,request)=>{calls++;assert.equal(c.key,config.key);assert.ok(!JSON.stringify(request).includes(config.key));return {draft:structuredClone(draft),usage:{input_tokens:100,output_tokens:200},request_id:'req-test',response_id:'resp-test'};};

@@ -8,6 +8,7 @@ on:
       - 'infra/gcp/deploy-operational.py'
       - 'infra/gcp/check-public.py'
       - 'server.mjs'
+      - 'agent-ai.mjs'
 permissions:
   contents: read
 concurrency:

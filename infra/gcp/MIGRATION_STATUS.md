@@ -1,5 +1,26 @@
 # TCOG migration status — 2026-10-27
 
+## AI proposal preview identity fix — current handoff, 2026-10-27
+
+PDF extraction and reviewed AI proposals were deployed in commit
+208afe17647e5e8f001abb965b7f30be802a38a8, workflow 40507179127. Private runtime
+rules were migrated separately; no proprietary rules belong in this public repo.
+The operator configured the model through the private /ai/setup form. Automatic
+agent execution, scheduler and external writes remain disabled.
+
+The first paid-pilot attempt stopped before the model call: Gmail attachment
+download IDs rotate between reads, invalidating previews of unchanged PDFs.
+The fix uses message/MIME-position/metadata identity plus SHA-256 of actual PDF
+bytes. Fresh-source, rule/configuration, incomplete-attachment and newer-thread
+checks remain enforced. Synthetic regressions reproduced the old failure and now
+pass on memory and PostgreSQL stores, including durable cache reuse and changed
+source blocking. All 86 tests pass without real model calls. The operational
+workflow also watches agent-ai.mjs to deploy this fix through the existing path.
+Live verification is pending: compare two free previews of the same task/context.
+Do not automatically repeat the failed paid pilot; obtain authorization for a
+fresh paid test. agent_status currently reports historical metadata_queue_only
+and zero AI calls as constants; do not treat these as live deployment/usage proof.
+
 ## Current handoff — authoritative summary
 
 This section supersedes earlier historical steps below.
