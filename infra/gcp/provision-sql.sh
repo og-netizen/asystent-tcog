@@ -25,7 +25,23 @@ assert not s.get('ipConfiguration',{}).get('authorizedNetworks'), 'Public author
 assert s.get('deletionProtectionEnabled') is True
 PY
 else
-  gcloud sql instances create "$instance" --project="$project" --region=europe-west3 --database-version=POSTGRES_16 --edition=ENTERPRISE --tier=db-g1-small --availability-type=ZONAL --storage-type=SSD --storage-size=10 --storage-auto-increase --storage-auto-increase-limit=20 --backup-start-time=02:00 --backup-location=europe-west3 --retained-backups-count=7 --deletion-protection --ssl-mode=ENCRYPTED_ONLY --connector-enforcement=REQUIRED --maintenance-window-day=SUN --maintenance-window-hour=3 --quiet
+  # Use the stable API field for the storage cap (not available in every CLI).
+  python3 - <<'PYAPI'
+import json, subprocess, urllib.request, urllib.error
+project='psychic-order-512811-k6'
+token=subprocess.check_output(['gcloud','auth','print-access-token'],text=True).strip()
+body={'name':'tcog-state','region':'europe-west3','databaseVersion':'POSTGRES_16','settings':{'tier':'db-g1-small','edition':'ENTERPRISE','availabilityType':'ZONAL','dataDiskType':'PD_SSD','dataDiskSizeGb':'10','storageAutoResize':True,'storageAutoResizeLimit':'20','deletionProtectionEnabled':True,'connectorEnforcement':'REQUIRED','ipConfiguration':{'ipv4Enabled':True,'authorizedNetworks':[],'sslMode':'ENCRYPTED_ONLY'},'backupConfiguration':{'enabled':True,'startTime':'02:00','location':'europe-west3','pointInTimeRecoveryEnabled':False,'backupRetentionSettings':{'retainedBackups':7,'retentionUnit':'COUNT'}},'maintenanceWindow':{'day':7,'hour':3,'updateTrack':'stable'}}}
+request=urllib.request.Request('https://sqladmin.googleapis.com/sql/v1beta4/projects/'+project+'/instances',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+try:
+    with urllib.request.urlopen(request,timeout=60) as response: operation=json.load(response)
+except urllib.error.HTTPError as error:
+    try: message=json.loads(error.read()).get('error',{}).get('message','')
+    except Exception: message=''
+    raise SystemExit('SQL provisioning HTTP '+str(error.code)+' '+message[:400]) from None
+name=operation['name']
+assert name and all(c.isalnum() or c=='-' for c in name)
+subprocess.run(['gcloud','sql','operations','wait',name,'--project='+project,'--timeout=1200'],check=True)
+PYAPI
 fi
 gcloud sql databases list --instance="$instance" --project="$project" --format='value(name)' > /tmp/tcog-db-names.txt
 if ! python3 - <<'PY'
