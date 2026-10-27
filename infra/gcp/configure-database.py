@@ -99,8 +99,13 @@ def main():
             # Once version 2 exists its password is reused, never rotated here.
             check=psql(host,admin_password,"SELECT CASE WHEN rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member=pg_roles.oid) THEN 'unsafe' ELSE 'safe' END FROM pg_roles WHERE rolname='tcog_app';")
             if check.returncode or check.stdout.strip() not in ('','safe'):raise Stop('EXISTING_APPLICATION_ROLE_UNSAFE')
-            action='ALTER ROLE' if check.stdout.strip()=='safe' else 'CREATE ROLE'
-            statement="BEGIN; "+action+" tcog_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '"+app_password+"'; ALTER DATABASE tcog_state OWNER TO tcog_app; COMMIT;"
+            if check.stdout.strip()=='safe':
+                # PostgreSQL disallows ALTER of SUPERUSER/REPLICATION/BYPASSRLS
+                # by a non-superuser, even when the requested values are false.
+                action="ALTER ROLE tcog_app LOGIN PASSWORD '"+app_password+"'; "
+            else:
+                action="CREATE ROLE tcog_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '"+app_password+"'; "
+            statement="BEGIN; "+action+"GRANT tcog_app TO postgres WITH SET TRUE; ALTER DATABASE tcog_state OWNER TO tcog_app; COMMIT;"
             created=psql(host,admin_password,statement)
             if created.returncode:raise Stop('APPLICATION_ROLE_SETUP_FAILED')
             check=psql(host,app_password,'SELECT current_user;',user='tcog_app',database='tcog_state')
