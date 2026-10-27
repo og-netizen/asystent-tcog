@@ -1,0 +1,42 @@
+name: Google Cloud - activate private integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tcog-gcp-staging
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: github.repository == 'og-netizen/asystent-tcog' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: psychic-order-512811-k6
+          workload_identity_provider: projects/411889473620/locations/global/workloadIdentityPools/tcog-github/providers/github
+          service_account: tcog-github-deployer@psychic-order-512811-k6.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Check integrations read-only and activate private server
+        run: python3 infra/gcp/activate-private.py
+      - name: Generate private test identity token
+        id: invoke
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: psychic-order-512811-k6
+          workload_identity_provider: projects/411889473620/locations/global/workloadIdentityPools/tcog-github/providers/github
+          service_account: tcog-github-deployer@psychic-order-512811-k6.iam.gserviceaccount.com
+          token_format: id_token
+          id_token_audience: https://tcog-staging-rcz56sj3hq-ey.a.run.app
+          id_token_include_email: true
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Verify SQL readiness and application authentication
+        env:
+          TCOG_ID_TOKEN: ${{ steps.invoke.outputs.id_token }}
+        run: python3 infra/gcp/check-operational.py

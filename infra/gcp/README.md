@@ -37,11 +37,12 @@ the application or change the current Render/ChatGPT connection.
 
 ## Remaining migration work
 
-- Add durable storage for OAuth codes, review receipts, task state and deduplication.
+- Verify live SQL state for OAuth codes and review receipts (adapter implemented).
+- Add a durable task queue, business history and plan-change deduplication.
 - Select and price the PostgreSQL setup, backups and retention.
-- Containerize the existing service and deploy a separately tested Cloud Run copy.
-- Import keys into Secret Manager through an authorized secret flow.
-- Reauthorize Gmail: its current encrypted refresh envelope is origin-bound.
+- Complete private integration checks for the deployed Cloud Run container.
+- Finish SQL credentials after the imported Secret Manager configuration.
+- Verify the privately re-encrypted Gmail envelope and register the new callback URI.
 - Configure public access for the MCP service separately; Cloud Run Developer
   does not grant service IAM management.
 - Test Gmail/PTV/FireTMS read paths, separately review writes and verify restart
@@ -112,3 +113,38 @@ connection settings must be added through a separate private operator step befor
 activation. Add the new `/google/oauth/callback` URL to the existing Google OAuth
 client before future reauthorization; the existing callback remains valid on Render.
 Revoke the temporary Render API key after a successful import.
+
+## PostgreSQL pilot and private activation
+
+`gcp-sql.yml` provisions `tcog-state`: PostgreSQL 16 Enterprise, Frankfurt,
+`db-g1-small` (shared 1.7 GiB), zonal, 10 GiB SSD with a 20 GiB auto-grow cap,
+seven daily backups in Frankfurt and deletion protection. Connector enforcement
+and TLS are required; no IP authorized networks are configured. This is a small
+paid pilot; shared-core instances have no Cloud SQL SLA. Compute is billed while
+running even when no AI task is processed; consult the regional Cloud SQL price
+before production sizing. It is deliberately not an HA deployment.
+
+After the instance is RUNNABLE, the operator executes `configure-database.py` in
+Cloud Shell. It verifies setup mode and imported config version 1, downloads a
+pinned SHA256-checked official Auth Proxy binary, connects through a local Unix
+socket and creates `tcog_app` with no role/database creation or elevated rights.
+Only the `tcog_state` database is owned by this role. A temporary postgres admin
+password is used in memory and reset to a discarded random value afterwards.
+The app password and existing config are stored together as secret version 2.
+Retries in setup mode reuse version 2's password or repair an unfinished role;
+an operational service or unexpected secret versions stop this procedure.
+No secret is printed, written as a credential file or passed in command arguments.
+The script requires the Cloud Shell `psql` client and Node is not required here.
+
+`gcp-activate-private.yml` is a separate manual workflow. It requires version 2
+and a running database, deploys a single-use Cloud Run test job with the runtime
+identity, secret mount and SQL connector, and performs only vendor reads plus
+isolated SQL probe rows. It checks database reconnect/one-time consumption,
+Gmail profile, one FireTMS vehicle read and one PTV geocode + route (quota usage).
+The job has no schedule, one task and zero retries. Output contains stage names
+and success/failure only. It does not create/update FireTMS orders or mail filters.
+
+Only after the job succeeds does the workflow activate the private service with
+exact secret version 2. It verifies readiness and the application OAuth gate.
+Public invocation, ChatGPT reconnection, OAuth client callback changes and Render
+retirement remain separate migration steps. Keep Render running throughout.
