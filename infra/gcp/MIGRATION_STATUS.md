@@ -1,5 +1,42 @@
 # TCOG migration status — 2026-10-27
 
+## Current handoff — authoritative summary
+
+This section supersedes earlier historical steps below.
+
+- The public Cloud Run service is configured with PostgreSQL and Secret Manager.
+- Registered ChatGPT app **TCOG FireTMS Cloud** is
+  `asdk_app_6ae085e9fc40819191b0ae8ce2a568c9`. Its tools were available and
+  authenticated reads succeeded in this chat: company identity, FireTMS vehicle
+  `GDA81689`, Gmail mailbox `og@tcog.pl` plus 20 filters, PTV geocoding and routing.
+  One initial FireTMS read returned a transient internal MCP error; subsequent
+  reads and the identical vehicle lookup succeeded. No business writes were tested.
+- Exact ChatGPT callback `https://chatgpt.com/connector/oauth/RiCpkjAKt4sn` is
+  allowlisted via `OAUTH_ADDITIONAL_REDIRECT_URIS`. Client ID is `asystent-tcog`,
+  token method `client_secret_post`; secret values stay in private configuration.
+- Operational deployment run 40493476227 passed all 60 tests and live public
+  OAuth/readiness checks, deploying revision `tcog-staging-00005-vqg`.
+- Original package `Plugin_29d5605bc40081919d73502ae6ded0c6` is an imported
+  desktop-only MCP package, distinct from the working registered cloud App.
+  Replacing its bindings is optional; do not confuse it with the working App.
+- Client instructions are verified in private plugin
+  `Plugin_5d4109f6662c8191927bf44e93f393f4`, version **1.0.12**, release
+  `pluginrel_6adf4cbf5c988191ae7de7d6a65bae77`: nine client profiles, general
+  rules, kapownik/FireTMS procedure, mail classification rules and filter audit.
+  They are **not yet included in the Cloud Run runtime**. Do not export their
+  business content into this public repository without explicit authorization.
+- Next agent-development work: private versioned client rules + backups; Gmail
+  message/thread/attachment reads (current custom tools mainly manage filters);
+  server-side Drive/Sheets authorization; durable task queue/history; processing
+  graph and plan-change handling; approval-based pilot and monitoring.
+- PostgreSQL currently persists OAuth codes and operation review receipts, not
+  a full task queue, business history or learning memory. Automatic agent is off.
+- Render has not been retired. Cloud App connection is now verified; any shutdown
+  must first account for remaining apps that may still use Render (e.g. Asystent TCOG).
+- Repository `AGENTS.md` supplies startup routing for future repository-backed
+  tasks. It does not automatically configure unrelated ChatGPT chats or projects,
+  and the operational App is not a cloud-admin connector.
+
 ## Verified live
 
 - Project: `psychic-order-512811-k6` / `411889473620`; region `europe-west3`.
