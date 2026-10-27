@@ -1,0 +1,49 @@
+name: Google Cloud - operational server
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gcp-operational.yml'
+      - 'infra/gcp/deploy-operational.py'
+      - 'infra/gcp/check-public.py'
+      - 'server.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: tcog-gcp-staging
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.repository == 'og-netizen/asystent-tcog' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_IMAGE: europe-west3-docker.pkg.dev/psychic-order-512811-k6/tcog/asystent
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify OAuth, operational behavior and PostgreSQL state
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: psychic-order-512811-k6
+          workload_identity_provider: projects/411889473620/locations/global/workloadIdentityPools/tcog-github/providers/github
+          service_account: tcog-github-deployer@psychic-order-512811-k6.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Build and publish operational image
+        run: |
+          docker build --pull --tag "$GCP_IMAGE:$GITHUB_SHA" .
+          gcloud auth configure-docker europe-west3-docker.pkg.dev --quiet
+          docker push "$GCP_IMAGE:$GITHUB_SHA"
+      - name: Preserve configured service and add the exact callback
+        run: python3 infra/gcp/deploy-operational.py
+      - name: Verify live public readiness and OAuth callback gate
+        run: python3 infra/gcp/check-public.py

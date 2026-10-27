@@ -66,7 +66,7 @@ export function createApp(env,upstream=readWfirma,services={}){
  if(!/^[1-9][0-9]*$/.test(env.WFIRMA_COMPANY_ID||''))throw Error('Brak poprawnego WFIRMA_COMPANY_ID');
  const config={company:env.WFIRMA_COMPANY_ID,access:env.WFIRMA_ACCESS_KEY,secret:env.WFIRMA_SECRET_KEY,app:env.WFIRMA_APP_KEY};
  const clientId='asystent-tcog';
- const callbacks=new Set((env.OAUTH_REDIRECT_URIS||'https://chatgpt.com/connector_platform/oauth_redirect,https://chat.openai.com/aip/plugin/oauth/callback').split(',').map(s=>s.trim()));
+ const callbacks=new Set([...(env.OAUTH_REDIRECT_URIS||'https://chatgpt.com/connector_platform/oauth_redirect,https://chat.openai.com/aip/plugin/oauth/callback').split(','),...(env.OAUTH_ADDITIONAL_REDIRECT_URIS||'').split(',')].map(s=>s.trim()).filter(Boolean));
  for(const uri of callbacks){const u=new URL(uri);if(u.protocol!=='https:'||u.username||u.password||u.hash)throw Error('Niepoprawny adres zwrotny OAuth');}
  const codeNamespace='oauth-codes'; let attempts=[];
  const clean=()=>stateStore.prune(codeNamespace);

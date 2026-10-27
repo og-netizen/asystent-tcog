@@ -97,3 +97,16 @@ test('DBK history discovery, auth, field projection, bounds and session cleanup'
  await assert.rejects(dbk.run('dbk_history',{device_id:'123',oldest:'2026-09-07T10:00:00Z',newest:'2026-09-07T12:00:00Z'}));assert.equal(calls.length,n);
  await assert.rejects(dbk.run('dbk_history',{device_id:'999',oldest:'2026-09-07T11:00:00Z',newest:'2026-09-07T12:00:00Z'}));assert.equal(calls.at(-1).method,'DELETE');
 });
+
+
+test('Additional OAuth callbacks extend the exact allowlist without accepting lookalikes',async()=>{
+ const callback='https://chatgpt.com/connector/oauth/RiCpkjAKt4sn';
+ const env={NODE_ENV:'test',PUBLIC_URL:'http://127.0.0.1',ADMIN_PASSWORD:'a'.repeat(40),OAUTH_CLIENT_SECRET:'s'.repeat(40),WFIRMA_COMPANY_ID:'1785731',WFIRMA_ACCESS_KEY:'fake',WFIRMA_SECRET_KEY:'fake',WFIRMA_APP_KEY:'fake',OAUTH_REDIRECT_URIS:'https://chatgpt.com/connector_platform/oauth_redirect',OAUTH_ADDITIONAL_REDIRECT_URIS:callback};
+ const server=createApp(env);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  for(const [uri,status] of [[callback,200],[env.OAUTH_REDIRECT_URIS,200],[callback+'other',400],[callback+'?next=https://evil.example',400],['https://evil.example/connector/oauth/RiCpkjAKt4sn',400]]){
+   const params=new URLSearchParams({client_id:'asystent-tcog',redirect_uri:uri,response_type:'code',scope:'firetms:read ptv:read gmail:read',code_challenge:'a'.repeat(43),code_challenge_method:'S256'});
+   const r=await fetch('http://127.0.0.1:'+server.address().port+'/authorize?'+params,{redirect:'manual'});assert.equal(r.status,status);
+  }
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
