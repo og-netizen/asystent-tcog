@@ -1,0 +1,31 @@
+name: Google Cloud - pilot database
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gcp-sql.yml'
+      - 'infra/gcp/provision-sql.sh'
+permissions:
+  contents: read
+concurrency:
+  group: tcog-gcp-sql
+  cancel-in-progress: false
+jobs:
+  database:
+    if: github.repository == 'og-netizen/asystent-tcog' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: psychic-order-512811-k6
+          workload_identity_provider: projects/411889473620/locations/global/workloadIdentityPools/tcog-github/providers/github
+          service_account: tcog-github-deployer@psychic-order-512811-k6.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Provision bounded pilot storage
+        run: bash infra/gcp/provision-sql.sh
