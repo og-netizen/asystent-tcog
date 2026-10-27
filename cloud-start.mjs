@@ -15,11 +15,13 @@ export async function cloudEnvironment(env){
 export async function createCloudServer(env,{openStore=openCloudStateStore}={}){
  const setup=env.TCOG_SETUP_MODE==='true';
  const config=setup?env:await cloudEnvironment(env);
- let store,app;
+ let store,app,queueConfigured=false;
  if(!setup){
   if(config.NODE_ENV==='test'||!config.PUBLIC_URL?.startsWith('https://'))throw Error('Cloud HTTPS origin required');
   store=await openStore(config);
-  try{app=createApp(config,undefined,{stateStore:store});}catch(e){await store.close();throw e;}
+  try{app=createApp(config,undefined,{stateStore:store});
+   if(config.GOOGLE_GMAIL_REFRESH_TOKEN_ENCRYPTED){try{const q=await app.agentBootstrap();queueConfigured=q.configured===true;console.log('TCOG_AGENT_BOOTSTRAP '+JSON.stringify(q));}catch{console.log('TCOG_AGENT_BOOTSTRAP '+JSON.stringify({configured:false,reason:'connection_or_storage_unavailable'}));}}
+  }catch(e){await store.close();throw e;}
  }
  const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
@@ -28,7 +30,7 @@ export async function createCloudServer(env,{openStore=openCloudStateStore}={}){
    if(req.method!=='GET'){res.writeHead(405);return res.end('{}');}
    let ready=!setup;if(ready){try{await store.count('__health__');}catch{ready=false;}}
    res.writeHead(path==='/ready'&&!ready?503:200);
-   return res.end(JSON.stringify({service:'TCOG',version:'0.9.0',configuration:setup?'awaiting-secrets-and-database':ready?'configured':'database-unavailable',operational:ready,state_storage:setup?'not-connected':'postgresql'}));
+   return res.end(JSON.stringify({service:'TCOG',version:'0.9.0',configuration:setup?'awaiting-secrets-and-database':ready?'configured':'database-unavailable',operational:ready,state_storage:setup?'not-connected':'postgresql',agent_stage:'metadata_queue_only',queue_configured:queueConfigured,scheduler_enabled:false,plan_generation_enabled:false}));
   }
   if(setup){res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify({error:'migration_setup_only'}));}
   app.emit('request',req,res);

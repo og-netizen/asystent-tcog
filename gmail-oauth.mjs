@@ -1,3 +1,4 @@
+import {mailReadPath} from './agent-queue.mjs';
 import {randomBytes, createHash, createCipheriv, createDecipheriv, timingSafeEqual} from 'node:crypto';
 
 export const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.modify','https://www.googleapis.com/auth/gmail.settings.basic'];
@@ -62,11 +63,13 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
   const allowed=['https://oauth2.googleapis.com/token','https://gmail.googleapis.com/gmail/v1/users/me/profile'];
   const gmailPath=url.startsWith('https://gmail.googleapis.com/gmail/v1/users/me/')?url.slice('https://gmail.googleapis.com/gmail/v1/users/me/'.length):'';
   const method=options.method||'GET';
-  if(!allowed.includes(url)&&!((method==='GET'&&['labels','settings/filters'].includes(gmailPath))||(method==='POST'&&gmailPath==='settings/filters')||(method==='DELETE'&&/^settings\/filters\/[A-Za-z0-9_-]{1,256}$/.test(gmailPath))))throw Error('google_destination');
+  if(!allowed.includes(url)&&!((method==='GET'&&(['labels','settings/filters'].includes(gmailPath)||mailReadPath(gmailPath)))||(method==='POST'&&gmailPath==='settings/filters')||(method==='DELETE'&&/^settings\/filters\/[A-Za-z0-9_-]{1,256}$/.test(gmailPath))))throw Error('google_destination');
   const response=await fetchImpl(url,{...options,redirect:'error',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Error('google_http_'+response.status);
   if(response.status===204)return {};
-  const data=await response.json();if(!data||typeof data!=='object'||Array.isArray(data))throw Error('google_response');return data;
+  const chunks=[];let bytes=0;
+  for await(const chunk of response.body){bytes+=chunk.length;if(bytes>4_000_000)throw Error('google_response_limit');chunks.push(chunk);}
+  const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!data||typeof data!=='object'||Array.isArray(data))throw Error('google_response');return data;
  }
  async function profile(accessToken) {
   if(typeof accessToken!=='string'||!accessToken)throw Error('missing_access_token');
@@ -143,5 +146,5 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
    return page(res,400,'Nie ukończono połączenia Gmail',`<p>${escape(messages[code]||'Połączenie z Google nie powiodło się. Sprawdź Gmail API, dane OAuth i dokładny adres przekierowania.')}</p><p>Kod: ${escape(code)}</p><p><a href="/google/oauth/start">Wróć do połączenia</a></p>`);
   }
  }
- return {handle,checkSaved,request,redirectUri};
+ return {handle,checkSaved,request,redirectUri,async readSession(){const access=await accessSaved();return path=>{if(!mailReadPath(path))throw Error('google_destination');return google('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{method:'GET',headers:{Authorization:'Bearer '+access}});};}};
 }
