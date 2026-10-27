@@ -1,6 +1,11 @@
 name: Google Cloud - activate private integration
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/gcp-activate-private.yml"
+      - "infra/gcp/activate-private.py"
 permissions:
   contents: read
 concurrency:
