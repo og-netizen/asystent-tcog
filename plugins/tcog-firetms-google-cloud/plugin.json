@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "tcog-firetms-google-cloud",
+  "version": "1.0.0",
+  "description": "Operacyjna integracja TCOG z FireTMS, PTV i Gmail przez serwer w Google Cloud.",
+  "author": {
+    "name": "TCOG — Oskar Gryczon"
+  },
+  "keywords": [
+    "TCOG",
+    "FireTMS",
+    "PTV",
+    "Gmail",
+    "Google Cloud"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "TCOG FireTMS — Google Cloud",
+        "shortDescription": "FireTMS, PTV i Gmail",
+        "longDescription": "Łączy ChatGPT z przeniesioną kopią serwera TCOG w Google Cloud: odczyt danych operacyjnych FireTMS, podgląd i tworzenie zleceń po autoryzacji, dostępne operacje edycji zgodnie z ograniczeniami serwera, trasy PTV oraz etykiety i filtry Gmail. Wymaga połączenia OAuth. Reguły klientów są w osobnej wtyczce TCOG Operacyjny — plany kierowców.",
+        "developerName": "TCOG — Oskar Gryczon",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": "Sprawdź połączenie TCOG z FireTMS, PTV i Gmail bez wykonywania zmian."
+      }
+    }
+  }
+}

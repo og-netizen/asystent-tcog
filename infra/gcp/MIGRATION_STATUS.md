@@ -52,3 +52,21 @@ Do not retire it before the new ChatGPT connection and relevant tools are verifi
 Task queues, business history, automatic plan processing, controlled learning,
 monitoring/alerts and a normal production deployment workflow remain future work.
 The setup deployment workflow refuses to overwrite this operational service.
+
+## New Google Cloud plugin created
+
+At the operator's explicit request, created a separate private workspace plugin
+[TCOG FireTMS — Google Cloud](https://chatgpt.com/plugins/Plugin_29d5605bc40081919d73502ae6ded0c6).
+ID `Plugin_29d5605bc40081919d73502ae6ded0c6`, release
+`pluginrel_6ae07ec01e588191b71db9876511c87c`, version `1.0.0`.
+Portable source is in `plugins/tcog-firetms-google-cloud/`.
+
+The package connects directly to the verified Cloud Run `/mcp` endpoint using
+provided OAuth client `asystent-tcog` and `client_secret_post`. Base/default
+scopes are `firetms:read firetms:write ptv:read gmail:read gmail:write`.
+It reuses the migrated server implementation and server-provided instructions;
+no static tool schema copies or financial/DBK permissions are added. Client
+secrets are not in the package. Original FireTMS app and operational client-rule
+plugin are retained. Creator readback verified both portable and compatibility
+MCP config. Installation and OAuth connection by the operator are still pending;
+no new authenticated tools were available immediately after creation.

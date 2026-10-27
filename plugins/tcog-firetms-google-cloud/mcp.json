@@ -1,0 +1,39 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "tcog-firetms": {
+      "type": "streamable-http",
+      "url": "https://tcog-staging-rcz56sj3hq-ey.a.run.app/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "provided",
+              "clientId": "asystent-tcog",
+              "tokenEndpointAuthMethod": "client_secret_post"
+            },
+            "authorizationUrl": "https://tcog-staging-rcz56sj3hq-ey.a.run.app/authorize",
+            "tokenUrl": "https://tcog-staging-rcz56sj3hq-ey.a.run.app/token",
+            "resource": "https://tcog-staging-rcz56sj3hq-ey.a.run.app/mcp",
+            "baseScopes": [
+              "firetms:read",
+              "firetms:write",
+              "ptv:read",
+              "gmail:read",
+              "gmail:write"
+            ],
+            "defaultScopes": [
+              "firetms:read",
+              "firetms:write",
+              "ptv:read",
+              "gmail:read",
+              "gmail:write"
+            ],
+            "oidcEnabled": false
+          }
+        }
+      }
+    }
+  }
+}
