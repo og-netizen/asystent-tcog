@@ -11,4 +11,9 @@ gcloud projects describe "$TCOG_PROJECT_ID" --format='yaml(projectId,projectNumb
 gcloud services list --enabled --project="$TCOG_PROJECT_ID" --format='value(config.name)' --filter='config.name:(run.googleapis.com OR artifactregistry.googleapis.com OR iamcredentials.googleapis.com OR sts.googleapis.com)'
 gcloud artifacts repositories describe tcog --location=europe-west3 --project="$TCOG_PROJECT_ID" --format='yaml(name,format)'
 gcloud run services list --project="$TCOG_PROJECT_ID" --region=europe-west3 --filter='metadata.name~^tcog-' --format='table(metadata.name,status.url)'
-printf 'TCOG_GCP_CONNECTION_OK\n'
+# Metadata only: never access secret values or change resources here.
+gcloud sql instances list --project="$TCOG_PROJECT_ID" --format='table(name,region,databaseVersion,state)'
+gcloud secrets describe tcog-runtime-env --project="$TCOG_PROJECT_ID" --format='yaml(name,replication)'
+gcloud secrets versions list tcog-runtime-env --project="$TCOG_PROJECT_ID" --format='table(name,state)'
+printf 'TCOG_GCP_DATA_ACCESS_VERIFIED\n'
+printf 'TCOG_GCP_CONNECTION_OK\n' 

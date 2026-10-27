@@ -92,3 +92,23 @@ re-encrypted in an authorized private migration process.
 Task queues, plan history, experience feedback, classifiers and learning behavior
 are still future application features. The current SQL table stores expiring
 OAuth and operation receipts only; do not describe it as deployed agent memory.
+
+## Operator-only credential import
+
+`import-render-secrets.py` runs interactively in Cloud Shell using the operator's
+Google identity and a temporary Render API key entered via a hidden prompt.
+It reads only the pinned Render service, checks workspace/URL and Cloud Run setup
+mode, copies an explicit configuration allowlist to one Secret Manager version,
+and re-encrypts the existing Gmail envelope for the verified Cloud Run origin.
+The helper imports the application's existing encryption implementation. No
+plaintext token, Render API key or credential file is written to disk or printed.
+Only direct service environment variables are supported; missing variables from
+environment groups abort the import. Existing secret versions also abort it.
+Inspect metadata after an uncertain network response instead of retrying blindly.
+
+The import does not create SQL, change the production service, refresh Gmail
+credentials, modify filters, enable public access or activate the agent. Database
+connection settings must be added through a separate private operator step before
+activation. Add the new `/google/oauth/callback` URL to the existing Google OAuth
+client before future reauthorization; the existing callback remains valid on Render.
+Revoke the temporary Render API key after a successful import.
