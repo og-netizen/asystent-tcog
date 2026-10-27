@@ -16,7 +16,12 @@ checks remain enforced. Synthetic regressions reproduced the old failure and now
 pass on memory and PostgreSQL stores, including durable cache reuse and changed
 source blocking. All 86 tests pass without real model calls. The operational
 workflow also watches agent-ai.mjs to deploy this fix through the existing path.
-Live verification is pending: compare two free previews of the same task/context.
+Fix deployed in 0cc8fc3cdb6cb359975f15525d6708f92d77ee85; operational workflow
+40510294808 completed successfully, including live readiness/OAuth checks.
+Authenticated source read confirmed complete mail/PDF and stable attachment IDs.
+Two consecutive free previews of the same known pilot task/context returned the
+same operation_id (8 sources, 18720 characters), ai_called=false. No real model
+call was made while fixing this bug; proposal quality remains untested by AI.
 Do not automatically repeat the failed paid pilot; obtain authorization for a
 fresh paid test. agent_status currently reports historical metadata_queue_only
 and zero AI calls as constants; do not treat these as live deployment/usage proof.
