@@ -1,3 +1,4 @@
+import {createMemoryStateStore} from './state-store.mjs';
 import {readFileSync} from 'node:fs';
 import {randomBytes,createHash} from 'node:crypto';
 const schemas=JSON.parse(readFileSync(new URL('./firetms-schemas.json',import.meta.url),'utf8'));
@@ -82,10 +83,11 @@ function validateLoad(d){
  }
  if(d.temperatureRange&&(typeof d.temperatureRange.from!=='number'||typeof d.temperatureRange.to!=='number'||d.temperatureRange.from>d.temperatureRange.to))throw Error('FireTMS invalid temperature range');
 }
-// Receipts are single-process, expire after 15 minutes, and are never retried after an uncertain write.
-// Restart invalidates every receipt. For recovery inspect FireTMS before preparing another operation.
-export function createFiretmsWrites(env,request){
- const receipts=new Map();
+// Cloud receipts use SQL atomic claims; Render fallback remains in-memory.
+// Unknown/in-progress writes are never retried after a restart or lost response.
+export function createFiretmsWrites(env,request,stateStore=createMemoryStateStore()){
+ const ns='firetms-receipts';
+ const save=(token,r)=>stateStore.put(ns,token,r,r.expires);
  const provisionalNote='KWOTY TYMCZASOWE: przychód 1 EUR i koszt 1 EUR do ustalenia i zmiany przez agenta zamykającego zlecenie po wykonaniu przewozu. Nie są stawką ostateczną.';
  function payloadFor(name,a,context){
   if(name==='firetms_create_load')return {...a.data,price:{amount:1,currencyCode:'EUR'},internalNote:[a.data.internalNote,provisionalNote].filter(Boolean).join('\n')};
@@ -164,33 +166,34 @@ export function createFiretmsWrites(env,request){
   const method=name==='firetms_update_load'?'PUT':'POST';
   const params=name==='firetms_create_transport_order'?{}:{allowClientOrderNumberDuplicates:'false'};
   if(preview){
-   for(const [k,v]of receipts)if(v.expires<Date.now())receipts.delete(k);
-   if(receipts.size>=500)throw Error('FireTMS too many pending operations');
+   await stateStore.prune(ns);
+   if(await stateStore.count(ns)>=500)throw Error('FireTMS too many pending operations');
    const context=await preflight(name,a)||{target:path};
    const target=context.target;
    const review_token=randomBytes(24).toString('base64url');
-   receipts.set(review_token,{hash:fingerprint(name,a),expires:Date.now()+900000,state:'prepared',target,context});
+   await save(review_token,{hash:fingerprint(name,a),expires:Date.now()+900000,state:'prepared',target,context});
    return {status:'preview_only',written:false,method,path:target,data:payloadFor(name,a,context),review_token,expires_in_seconds:900,
     execution_enabled:name!=='firetms_update_load'||env.FIRETMS_OPERATIONAL_PUT_VERIFIED==='true',
     warning:name==='firetms_update_load'?'Wykonanie PUT domyślnie zablokowane: niepotwierdzone zachowanie pominiętych pól i ceny.':name==='firetms_create_transport_order'?'Sprawdzono auto, przypisanie load i aktywnego przewoźnika dla auta zewnętrznego. Pozostałe warunki statusu sprawdza FireTMS. Zestaw domyślny wymaga kontroli po zapisie.':'Podgląd nie potwierdza walidacji po stronie FireTMS, w tym geokodowania i limitów klienta. Bez referencji klienta nie gwarantuje wykrycia duplikatów. Po utracie odpowiedzi sprawdź listę przed ponowną próbą.'};
   }
   if(name==='firetms_update_load'&&env.FIRETMS_OPERATIONAL_PUT_VERIFIED!=='true')throw Error('FireTMS update blocked: omitted price semantics not verified');
-  const r=receipts.get(a.review_token);
+  let r=await stateStore.get(ns,a.review_token);
   if(!r||r.expires<Date.now()||r.hash!==fingerprint(name,a))throw Error('FireTMS invalid or expired review token');
   if(r.state==='done')return r.result;
-  if(r.state==='rejected')throw r.error;
+  if(r.state==='rejected'){const e=Error(r.errorMessage||'FireTMS rejected operation');if(r.errorDiagnostic)e.firetms=r.errorDiagnostic;throw e;}
   if(r.state!=='prepared')throw Error('FireTMS write outcome unknown or in progress; inspect system before retry');
-  r.state='checking';
-  try{const context=await preflight(name,a)||{target:path};if(JSON.stringify(context)!==JSON.stringify(r.context))throw Error('FireTMS truck type or carrier changed; prepare again');}catch(e){r.state='prepared';throw e;}
-  r.state='in_progress';
+  r=await stateStore.claim(ns,a.review_token,'prepared','checking');
+  if(!r)throw Error('FireTMS write outcome unknown or in progress; inspect system before retry');
+  try{const context=await preflight(name,a)||{target:path};if(JSON.stringify(context)!==JSON.stringify(r.context))throw Error('FireTMS truck type or carrier changed; prepare again');}catch(e){r.state='prepared';await save(a.review_token,r);throw e;}
+  r.state='in_progress';await save(a.review_token,r);
   try{
    const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'false'}:params,method,payloadFor(name,a,r.context));
    // Never call a status complete/confirmed unless the subsequent read says so.
    let verification=null;
    if(name==='firetms_create_transport_order'&&data?.id){try{verification=await request('/orders/'+data.id,{});}catch{verification={readback_failed:true};}}
    if(name==='firetms_create_load'&&a.data.clientOrderNumber){try{verification=await request('/loads',{page:'1',size:'2',query:'clientSideOrderNumber=="'+a.data.clientOrderNumber+'"'});}catch{verification={readback_failed:true};}}
-   r.result={status:'api_accepted',written:true,data,verification,provisionalAmounts:name==='firetms_create_load'?{revenue_eur:1,final:false}:r.target==='/forwarding-order'?{cost_eur:1,final:false}:undefined,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';return r.result;
-  }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: [A-Za-z0-9 ._:;-]*)?$/.test(e.message)){r.state='rejected';r.error=e;throw e;}const failure=Error('FireTMS write outcome unknown; '+(/^FireTMS HTTP [0-9]{3}/.test(e.message)?e.message:'inspect system before retry'));if(e.firetms)failure.firetms={...e.firetms,outcome:'unknown',retry:false};throw failure;}
+   r.result={status:'api_accepted',written:true,data,verification,provisionalAmounts:name==='firetms_create_load'?{revenue_eur:1,final:false}:r.target==='/forwarding-order'?{cost_eur:1,final:false}:undefined,note:'Sprawdź status odpowiedzi i odczyt kontrolny. Nie oznacza wysłania planu kierowcy. Nie ponawiaj tworzenia po utracie odpowiedzi bez sprawdzenia FireTMS.'};r.state='done';await save(a.review_token,r);return r.result;
+  }catch(e){r.state='unknown';if(/^FireTMS HTTP 4[0-9]{2}(?: [A-Za-z0-9 ._:;-]*)?$/.test(e.message)){r.state='rejected';r.errorMessage=e.message;if(e.firetms)r.errorDiagnostic=e.firetms;await save(a.review_token,r);throw e;}await save(a.review_token,r);const failure=Error('FireTMS write outcome unknown; '+(/^FireTMS HTTP [0-9]{3}/.test(e.message)?e.message:'inspect system before retry'));if(e.firetms)failure.firetms={...e.firetms,outcome:'unknown',retry:false};throw failure;}
  }};
 }
 

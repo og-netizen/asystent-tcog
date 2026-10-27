@@ -8,9 +8,13 @@
   },
   "scripts": {
     "start": "node pilot/free-start.mjs",
-    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs ptv.test.mjs ptv-report.test.mjs gmail-oauth.test.mjs gmail-filters.test.mjs"
+    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs ptv.test.mjs ptv-report.test.mjs gmail-oauth.test.mjs gmail-filters.test.mjs state-store.test.mjs cloud-start.test.mjs"
   },
   "dependencies": {
-    "pdf-lib": "1.17.1"
+    "pdf-lib": "1.17.1",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12"
   }
 }

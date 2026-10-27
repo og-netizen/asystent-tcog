@@ -51,3 +51,44 @@ the application or change the current Render/ChatGPT connection.
 References: Google Cloud documentation for workload identity federation with
 deployment pipelines and Cloud Run container deployment; official
 `google-github-actions/auth` and `setup-gcloud` actions. Action revisions are pinned.
+
+## Staging container and SQL state adapter (next stage)
+
+`gcp-staging.yml` builds and tests a container, publishes it to the existing image
+repository, and creates private `tcog-staging` in `europe-west3`. Settings: one
+vCPU, 512 MiB, minimum zero and maximum one instance, request-based default
+billing. Docker image storage and requests may incur usage charges. No SQL
+instance is created by this workflow. Its service URL stays IAM-protected.
+
+Setup mode only reports health. Operational readiness is 503 and all MCP/Google
+OAuth routes are disabled until configuration and SQL are present. It is not a
+working replacement for Render yet. The existing npm start entry point on Render
+is preserved. The staging workflow refuses to reset an operational service to
+setup mode.
+
+Cloud startup uses a Secret Manager JSON file (`TCOG_ENV_FILE`) with a bounded
+set of configuration keys, then requires a `/cloudsql/` Unix socket and database
+credentials. OAuth code consumption and Gmail/FireTMS review claims use SQL
+atomic operations. Interrupted writes retain their in-progress/unknown state;
+no automatic retry is enabled. The database adapter is tested against the actual
+PostgreSQL engine embedded in PGlite, including two competing application clients.
+This does not replace the later live Cloud SQL/restart checks.
+
+`prepare-data-access.sh` is the next project-administrator step. Review it before
+execution: it grants the GitHub deployer **Cloud SQL Admin on this project** and
+adds a single empty `tcog-runtime-env` secret replicated in Frankfurt. The runtime
+gets Cloud SQL Client and read access to that secret. The deployer can add secret
+versions and read metadata, but cannot read secret values directly. Deployed code
+can use runtime secret access, so keep deployment access restricted to this repo.
+No database instance, password or application credential is created by this step.
+
+The SQL instance size, backups, recurring cost and secret transfer must be settled
+before provisioning. Existing Render credentials are not available through the
+current connector's read tools; use an authorized operator transfer into Secret
+Manager, never a chat message or public GitHub workflow log. Gmail's encrypted
+token remains bound to its original origin and must be reauthorized or explicitly
+re-encrypted in an authorized private migration process.
+
+Task queues, plan history, experience feedback, classifiers and learning behavior
+are still future application features. The current SQL table stores expiring
+OAuth and operation receipts only; do not describe it as deployed agent memory.

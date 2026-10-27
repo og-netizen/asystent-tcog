@@ -57,7 +57,7 @@ export function firetmsTransport(url,key,method='GET',body){
   req.on('error',()=>reject(Error('FireTMS connection failed')));req.end(payload);
  });
 }
-export function createFiretms(env,transport=firetmsTransport){
+export function createFiretms(env,transport=firetmsTransport,stateStore){
  const base=env.FIRETMS_BASE_URL||'https://app.firetms.com/api';
  if(base!=='https://app.firetms.com/api')throw Error('FIRETMS_BASE_URL: unsupported origin');
  const request=async(path,params={},method='GET',data)=>{
@@ -65,7 +65,7 @@ export function createFiretms(env,transport=firetmsTransport){
   const url=new URL(base+path);url.search=new URLSearchParams(params).toString();
   return transport(url,env.FIRETMS_API_KEY,method,data);
  };
- const writes=createFiretmsWrites(env,request);
+ const writes=createFiretmsWrites(env,request,stateStore);
  return {async run(name,a){
   if([...firetmsPreviewTools,...firetmsWriteTools].some(t=>t.name===name)){
    const result=await writes.run(name,a);

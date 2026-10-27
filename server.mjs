@@ -1,3 +1,4 @@
+import {createMemoryStateStore} from './state-store.mjs';
 import {createGmailFilters,gmailTools} from './gmail-filters.mjs';
 import {createGmailOAuth} from './gmail-oauth.mjs';
 import {createPtv,ptvTools} from './ptv.mjs';
@@ -52,13 +53,14 @@ export function readWfirma(config,resource,id,page=1,limit=10){
 export function createApp(env,upstream=readWfirma,services={}){
  const ptv=createPtv(env,services.ptvTransport);
  const dbk=createDbk(env);
- const firetms=createFiretms(env,services.firetmsTransport);
+ const stateStore=services.stateStore||createMemoryStateStore();
+ const firetms=createFiretms(env,services.firetmsTransport,stateStore);
  const base=new URL(env.PUBLIC_URL||env.RENDER_EXTERNAL_URL||'');
  if(base.protocol!=='https:'&&!(env.NODE_ENV==='test'&&base.hostname==='127.0.0.1'))throw Error('PUBLIC_URL musi używać HTTPS.');
  if(base.pathname!=='/'||base.search||base.hash||base.username||base.password)throw Error('PUBLIC_URL: podaj sam adres serwera.');
  const origin=base.origin, audience=origin+'/mcp';
  const gmailOAuth=createGmailOAuth(env,services.gmailOAuth);
- const gmail=createGmailFilters(services.gmailClient||gmailOAuth);
+ const gmail=createGmailFilters(services.gmailClient||gmailOAuth,{stateStore});
  for(const name of ['ADMIN_PASSWORD','OAUTH_CLIENT_SECRET'])if((env[name]||'').length<32)throw Error(name+': minimum 32 znaki.');
  for(const name of ['WFIRMA_ACCESS_KEY','WFIRMA_SECRET_KEY','WFIRMA_APP_KEY'])if(!(env[name]||'').trim())throw Error('Brak '+name);
  if(!/^[1-9][0-9]*$/.test(env.WFIRMA_COMPANY_ID||''))throw Error('Brak poprawnego WFIRMA_COMPANY_ID');
@@ -66,8 +68,8 @@ export function createApp(env,upstream=readWfirma,services={}){
  const clientId='asystent-tcog';
  const callbacks=new Set((env.OAUTH_REDIRECT_URIS||'https://chatgpt.com/connector_platform/oauth_redirect,https://chat.openai.com/aip/plugin/oauth/callback').split(',').map(s=>s.trim()));
  for(const uri of callbacks){const u=new URL(uri);if(u.protocol!=='https:'||u.username||u.password||u.hash)throw Error('Niepoprawny adres zwrotny OAuth');}
- const codes=new Map(); let attempts=[];
- const clean=()=>{for(const map of [codes])for(const [k,v]of map)if(v.exp<Date.now())map.delete(k);};
+ const codeNamespace='oauth-codes'; let attempts=[];
+ const clean=()=>stateStore.prune(codeNamespace);
  function sign(data){const value=Buffer.from(JSON.stringify(data)).toString('base64url');return value+'.'+createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(value).digest('base64url');}
  function verify(token){try{const [v,s,...rest]=token.split('.');if(rest.length||!v||!s||!equal(s,createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(v).digest('base64url')))return null;const d=JSON.parse(Buffer.from(v,'base64url'));return d.exp>Date.now()&&d.aud===audience&&validScopes(d.scope)&&d.sub===config.company?d:null;}catch{return null;}}
  // Signed login forms survive restarts; a separate cookie still binds the browser.
@@ -90,7 +92,7 @@ export function createApp(env,upstream=readWfirma,services={}){
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',`default-src 'none'; form-action 'self' ${[...new Set([...callbacks].map(uri=>new URL(uri).origin))].join(' ')}; frame-ancestors 'none'; base-uri 'none'`);
   try{
-   clean();const url=new URL(req.url,origin),path=url.pathname;
+   await clean();const url=new URL(req.url,origin),path=url.pathname;
    if(path.startsWith('/google/'))return await gmailOAuth.handle(req,res,url);
    if(req.headers.origin&&![origin,'https://chatgpt.com','https://chat.openai.com'].includes(req.headers.origin))return json(res,403,{error:'origin_not_allowed'});
    if(req.method==='GET'&&path.startsWith('/ptv-reports/')){
@@ -129,7 +131,7 @@ export function createApp(env,upstream=readWfirma,services={}){
     attempts=attempts.filter(t=>t>Date.now()-900000);
     if(attempts.length>=10)return json(res,429,{error:'Odczekaj 15 minut przed kolejną próbą.'});
     if(!equal(q.password||'',env.ADMIN_PASSWORD)){attempts.push(Date.now());return json(res,403,{error:'Niepoprawne hasło integracji. Wróć i spróbuj ponownie.'});}
-    const code=random();codes.set(code,{...flow,exp:Date.now()+60000});
+    const code=random();await stateStore.put(codeNamespace,code,{...flow,exp:Date.now()+60000},Date.now()+60000);
     const target=new URL(flow.redirect_uri);target.searchParams.set('code',code);if(flow.state)target.searchParams.set('state',flow.state);
     res.writeHead(303,{Location:target.href,'Set-Cookie':'tcog_auth=; HttpOnly; Secure; SameSite=Lax; Path=/authorize; Max-Age=0'});return res.end();
    }
@@ -138,9 +140,9 @@ export function createApp(env,upstream=readWfirma,services={}){
     let id=q.client_id,secret=q.client_secret;
     if(req.headers.authorization?.startsWith('Basic ')){const b=Buffer.from(req.headers.authorization.slice(6),'base64').toString();const at=b.indexOf(':');id=decodeURIComponent(b.slice(0,at));secret=decodeURIComponent(b.slice(at+1));}
     if(id!==clientId||!equal(secret||'',env.OAUTH_CLIENT_SECRET))return json(res,401,{error:'invalid_client'});
-    const flow=codes.get(q.code);
+    const flow=await stateStore.get(codeNamespace,q.code);
     if(q.grant_type!=='authorization_code'||!flow||flow.client_id!==id||q.redirect_uri!==flow.redirect_uri||!/^[A-Za-z0-9._~-]{43,128}$/.test(q.code_verifier||'')||!equal(hash(q.code_verifier).toString('base64url'),flow.code_challenge)||(q.resource&&q.resource!==audience))return json(res,400,{error:'invalid_grant'});
-    codes.delete(q.code);
+    if(!await stateStore.take(codeNamespace,q.code))return json(res,400,{error:'invalid_grant'});
     return json(res,200,{access_token:sign({aud:audience,scope:flow.scope||scope,exp:Date.now()+12*3600000,sub:config.company,nonce:random()}),token_type:'Bearer',expires_in:43200,scope:flow.scope||scope});
    }
    if(path==='/mcp'){

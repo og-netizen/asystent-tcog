@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+.env
+.env.*
+gha-creds-*.json
+*.test.mjs
+test.mjs
+upload
+tmp
+*.zip
+*.pdf
+infra
