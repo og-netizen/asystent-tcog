@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node pilot/free-start.mjs",
-    "test": "node --test test.mjs pilot/test.mjs firetms.test.mjs ptv.test.mjs ptv-report.test.mjs gmail-oauth.test.mjs gmail-filters.test.mjs state-store.test.mjs cloud-start.test.mjs"
+    "test": "node --test operational-memory.test.mjs test.mjs pilot/test.mjs firetms.test.mjs ptv.test.mjs ptv-report.test.mjs gmail-oauth.test.mjs gmail-filters.test.mjs state-store.test.mjs cloud-start.test.mjs"
   },
   "dependencies": {
     "pdf-lib": "1.17.1",

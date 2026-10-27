@@ -107,7 +107,8 @@ test('Read-only tokens discover scoped write descriptors but cannot execute; wri
  const token=scope=>{const v=Buffer.from(JSON.stringify({aud:'http://127.0.0.1/mcp',scope,exp:Date.now()+10000,sub:'1785731'})).toString('base64url');return v+'.'+createHmac('sha256',env.OAUTH_CLIENT_SECRET).update(v).digest('base64url');};
  const rpc=async(scope,method,params)=> (await fetch('http://127.0.0.1:'+server.address().port+'/mcp',{method:'POST',headers:{Authorization:'Bearer '+token(scope)},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})})).json();
  try{
-  const read=(await rpc('firetms:read','tools/list')).result.tools.map(t=>t.name);assert.deepEqual(read,['firetms_list','firetms_order','firetms_preview_create_load','firetms_preview_create_transport_order','firetms_preview_update_load','firetms_create_load','firetms_create_transport_order','firetms_update_load']);
+  const read=(await rpc('firetms:read','tools/list')).result.tools.map(t=>t.name);assert.deepEqual(read.filter(n=>n.startsWith('firetms_')),['firetms_list','firetms_order','firetms_preview_create_load','firetms_preview_create_transport_order','firetms_preview_update_load','firetms_create_load','firetms_create_transport_order','firetms_update_load']);
+  assert.ok(read.includes('memory_lookup'));
   const write=(await rpc('firetms:read firetms:write','tools/list')).result.tools;
   assert.ok(write.some(t=>t.name==='firetms_create_load'&&!t.annotations.readOnlyHint));assert.ok(!write.some(t=>t.name.startsWith('wfirma_')||t.name.startsWith('dbk_')));
   const rejected=await rpc('firetms:read','tools/call',{name:'firetms_create_load',arguments:{data:loadData()}});assert.equal(rejected.result.isError,true);assert.ok(rejected.result._meta['mcp/www_authenticate'][0].includes('firetms:write'));
