@@ -70,3 +70,25 @@ secrets are not in the package. Original FireTMS app and operational client-rule
 plugin are retained. Creator readback verified both portable and compatibility
 MCP config. Installation and OAuth connection by the operator are still pending;
 no new authenticated tools were available immediately after creation.
+
+## Correction: imported MCP package is desktop-only
+
+Operator reports the created plugin is available on desktop but absent on web.
+Official documentation establishes the cause: imported plugin packages declaring
+MCP servers in `mcp.json` or `.mcp.json` are marked Desktop only, including remote
+HTTPS servers. This package has both declarations and no registered App binding.
+Do not treat refreshing ChatGPT or successful package creation as a solution.
+
+Sources:
+- https://learn.chatgpt.com/docs/enterprise/plugin-management#desktop-only-plugins
+- https://developers.openai.com/plugins/deploy/connect-chatgpt
+
+Required repair: the operator registers the already verified Cloud Run `/mcp`
+endpoint through ChatGPT web Plugins > + > Add custom MCP server, with OAuth
+client `asystent-tcog` and the existing client secret entered only in that private
+form. Obtain the exact new App/plugin connection reference. Then update the
+existing `Plugin_29d5605bc40081919d73502ae6ded0c6` to reference that registered
+App via `.app.json` and `extensions.com.openai.apps`, removing both bundled MCP
+configuration files and any compatibility `mcpServers` declaration. Preserve
+identity, sharing, and presentation. No App ID is known yet; do not invent one
+or bind it to the old Render App. Until this is done the plugin is not web-ready.
