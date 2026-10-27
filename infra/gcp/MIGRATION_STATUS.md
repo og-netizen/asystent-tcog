@@ -4,7 +4,8 @@
 
 - Project: `psychic-order-512811-k6` / `411889473620`; region `europe-west3`.
 - Runtime: `tcog-staging`, URL `https://tcog-staging-rcz56sj3hq-ey.a.run.app`.
-- Active private revision: `tcog-staging-00004-964`; setup mode disabled.
+- Private activation verified at revision `tcog-staging-00004-964`; setup mode disabled.
+- Operator subsequently enabled public invocation; application OAuth remains enforced.
 - Configuration: exact Secret Manager version `tcog-runtime-env:2`; no values in Git.
 - PostgreSQL 16 `tcog-state`, database `tcog_state`, runtime role `tcog_app`.
 - Paid pilot sizing/backups/limits are documented in README and provision script.
@@ -21,17 +22,27 @@ Readiness, private IAM enforcement, MCP application authentication and OAuth
 resource metadata all passed (`TCOG_PRIVATE_OPERATIONAL_OK`). This is not yet
 a completed ChatGPT reconnection or an end-to-end live FireTMS write test.
 
-## Next operator step
+## Public endpoint verified
 
-The GitHub deployer deliberately lacks `run.services.setIamPolicy`. Public
-invocation must be configured by the project administrator; do not expand the
-deployer's project roles just to avoid this one-time step. Cloud Run's IAM
-invoker check can be disabled for this specific service only, leaving the
-application's OAuth, scopes and write previews enforced. Verify public health,
-readiness, discovery and an unauthenticated MCP rejection afterwards.
+After the operator's Cloud Shell change, direct unauthenticated HTTPS checks
+returned 200 for `/health` and `/ready` with `operational:true` and
+`state_storage:postgresql`. Authorization-server and protected-resource discovery
+returned 200 with the Cloud Run origin and `/mcp` resource. An unauthenticated
+POST to `/mcp` returned 401 with the OAuth challenge, as required. No application
+access token or customer record was needed for these checks.
+
+The GitHub deployer still deliberately lacks `run.services.setIamPolicy`; no
+project IAM permissions were expanded. The private-only activation checker is
+now historical: it intentionally expects an IAM-protected service and must not
+be rerun after public cutover without updating that expectation.
+
+## Next step: ChatGPT connection
 
 Then update/reconnect the existing ChatGPT integration to the Cloud Run `/mcp`
-URL, retaining the existing OAuth client ID and secret via private configuration.
+URL, retaining OAuth client ID `asystent-tcog` and the existing secret via private
+configuration. The available plugin-management tools do not edit an existing
+App connection URL; the operator must update it in ChatGPT, or use the supported
+custom MCP creation UI if URL editing is unavailable. Never ask for secrets in chat.
 Add the new `/google/oauth/callback` to the existing Google OAuth client before
 any future Gmail reauthorization. Existing Gmail refresh was privately rebound
 and passed the live read check, so immediate reauthorization is unnecessary.
