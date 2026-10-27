@@ -68,7 +68,7 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
   if(!response.ok)throw Error('google_http_'+response.status);
   if(response.status===204)return {};
   const chunks=[];let bytes=0;
-  for await(const chunk of response.body){bytes+=chunk.length;if(bytes>4_000_000)throw Error('google_response_limit');chunks.push(chunk);}
+  for await(const chunk of response.body){bytes+=chunk.length;if(bytes>(gmailPath.includes('/attachments/')?9_000_000:4_000_000))throw Error('google_response_limit');chunks.push(chunk);}
   const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!data||typeof data!=='object'||Array.isArray(data))throw Error('google_response');return data;
  }
  async function profile(accessToken) {

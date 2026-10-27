@@ -32,8 +32,8 @@ for(const backend of ['memory','postgres'])test(backend+': durable intake, no du
  if(db)await db.close();
 });
 test('Gmail read allowlist rejects send/delete, unknown destinations, raw bulk payloads and unbounded queries',()=>{
- for(const p of ['messages?maxResults=25&labelIds=Label_in&q=after%3A1&includeSpamTrash=false','messages/a1?format=metadata&metadataHeaders=Subject','messages/a1?format=full'])assert.equal(mailReadPath(p),true,p);
- for(const p of ['messages/send','messages/a1?format=raw','https://evil.example/messages','../messages/a1?format=full','messages/a1/attachments/id','messages?maxResults=500&includeSpamTrash=false','messages?maxResults=1&includeSpamTrash=true','messages/a1?format=full&access_token=secret','messages/a1?format=full#x'])assert.equal(mailReadPath(p),false,p);
+ for(const p of ['messages?maxResults=25&labelIds=Label_in&q=after%3A1&includeSpamTrash=false','messages/a1?format=metadata&metadataHeaders=Subject','messages/a1?format=full','messages/a1/attachments/id'])assert.equal(mailReadPath(p),true,p);
+ for(const p of ['messages/send','messages/a1?format=raw','https://evil.example/messages','../messages/a1?format=full','messages?maxResults=500&includeSpamTrash=false','messages?maxResults=1&includeSpamTrash=true','messages/a1?format=full&access_token=secret','messages/a1?format=full#x'])assert.equal(mailReadPath(p),false,p);
 });
 test('context explicitly flags PDFs, html-only, detached text and truncated messages',()=>{
  const pdf=message('a1');pdf.payload={mimeType:'multipart/mixed',parts:[pdf.payload,{filename:'plan.pdf',mimeType:'application/pdf',body:{attachmentId:'a',size:100}}]};assert.equal(mailContext(pdf).attachments_pending,true);

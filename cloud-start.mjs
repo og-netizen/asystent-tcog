@@ -30,7 +30,7 @@ export async function createCloudServer(env,{openStore=openCloudStateStore}={}){
    if(req.method!=='GET'){res.writeHead(405);return res.end('{}');}
    let ready=!setup;if(ready){try{await store.count('__health__');}catch{ready=false;}}
    res.writeHead(path==='/ready'&&!ready?503:200);
-   return res.end(JSON.stringify({service:'TCOG',version:'0.9.0',configuration:setup?'awaiting-secrets-and-database':ready?'configured':'database-unavailable',operational:ready,state_storage:setup?'not-connected':'postgresql',agent_stage:'metadata_queue_only',queue_configured:queueConfigured,scheduler_enabled:false,plan_generation_enabled:false}));
+   return res.end(JSON.stringify({service:'TCOG',version:'0.9.0',configuration:setup?'awaiting-secrets-and-database':ready?'configured':'database-unavailable',operational:ready,state_storage:setup?'not-connected':'postgresql',agent_stage:'proposal_preparation',ai_setup_available:!setup,queue_configured:queueConfigured,scheduler_enabled:false,plan_generation_enabled:false}));
   }
   if(setup){res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify({error:'migration_setup_only'}));}
   app.emit('request',req,res);

@@ -17,6 +17,8 @@ export function mailReadPath(path){
  if(typeof path!=='string'||path.length>4000||/[#\\]/.test(path))return false;
  const u=new URL(path,'https://gmail.googleapis.com/gmail/v1/users/me/');
  if(u.origin!=='https://gmail.googleapis.com'||u.pathname!=='/gmail/v1/users/me/'+path.split('?')[0])return false;
+ const attachment=/^messages\/[a-f0-9]{1,64}\/attachments\/[A-Za-z0-9_-]{1,2048}$/.test(path);
+ if(attachment)return true;
  const msg=/^messages\/([a-f0-9]{1,64})$/.test(path.split('?')[0]);
  const allowed=msg?['format','metadataHeaders']:['q','maxResults','labelIds','pageToken','includeSpamTrash'];
  if(!msg&&u.pathname!=='/gmail/v1/users/me/messages')return false;

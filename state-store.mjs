@@ -5,11 +5,14 @@ const copy=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
 
 // Memory adapter remains for existing Render/tests. Cloud startup requires SQL.
 export function createMemoryStateStore({now=Date.now}={}){
- const records=new Map(), memory=new Map(), agentConfigs=new Map(), jobs=new Map();
+ const records=new Map(), memory=new Map(), agentConfigs=new Map(), jobs=new Map(), modelOps=new Map(), modelBudgets=new Map();
  const id=(n,k)=>n+':'+keyOf(n,k);
  const live=(n,k)=>{const r=records.get(id(n,k));if(r&&r.expires>now())return r;records.delete(id(n,k));};
  return {
   async initialize(){},async close(){},
+  async modelOperation(t,k){return copy(modelOps.get(t+':'+k));},
+  async modelReserve(t,k,day,limit,payload){payload={...payload,budget_day:day};const key=t+':'+k,existing=modelOps.get(key);if(existing&&!(existing.state==='DAILY_LIMIT'&&existing.payload.budget_day!==day))return {allowed:false,operation:copy(existing)};const op={state:'RUNNING',payload:copy(payload)};modelOps.set(key,op);const budgetKey=t+':'+day,count=modelBudgets.get(budgetKey)||0;if(count>=limit){op.state='DAILY_LIMIT';return {allowed:false,operation:copy(op)};}modelBudgets.set(budgetKey,count+1);return {allowed:true,operation:copy(op)};},
+  async modelFinish(t,k,state,payload){const key=t+':'+k;if(modelOps.get(key)?.state!=='RUNNING')throw Error('AI operation state conflict');modelOps.set(key,{state,payload:copy(payload)});},
   async agentGetConfig(t){return copy(agentConfigs.get(t));},
   async agentConfig(t,expected,data){if((agentConfigs.get(t)?.revision??0)!==expected)throw Error('Agent revision conflict');const r={...copy(data),revision:expected+1};agentConfigs.set(t,r);return copy(r);},
   async agentTask(t,k){return copy(jobs.get(t+':'+k));},
@@ -48,8 +51,20 @@ export function createPostgresStateStore(pool){
    await query('CREATE TABLE IF NOT EXISTS tcog_agent_config (tenant text PRIMARY KEY,revision integer NOT NULL,payload jsonb NOT NULL)');
    await query('CREATE TABLE IF NOT EXISTS tcog_agent_jobs(tenant text NOT NULL,id text NOT NULL,payload jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant,id))');
    await query('CREATE INDEX IF NOT EXISTS tcog_agent_jobs_list ON tcog_agent_jobs(tenant,created_at DESC,id)');
-   await query("CREATE INDEX IF NOT EXISTS tcog_agent_jobs_thread ON tcog_agent_jobs(tenant, (payload->'source'->>'thread_id'))");},
+   await query("CREATE INDEX IF NOT EXISTS tcog_agent_jobs_thread ON tcog_agent_jobs(tenant, (payload->'source'->>'thread_id'))");
+   await query('CREATE TABLE IF NOT EXISTS tcog_model_operations(tenant text NOT NULL,id text NOT NULL,state text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(tenant,id))');
+   await query('CREATE TABLE IF NOT EXISTS tcog_model_budget(tenant text NOT NULL,day date NOT NULL,calls integer NOT NULL,PRIMARY KEY(tenant,day))');},
   async close(){await pool.end?.();},
+  async modelOperation(t,k){return (await query('SELECT state,payload FROM tcog_model_operations WHERE tenant=$1 AND id=$2',[t,k])).rows[0];},
+  async modelReserve(t,k,day,limit,payload){
+   payload={...payload,budget_day:day};
+   let insert=await query("INSERT INTO tcog_model_operations(tenant,id,state,payload) VALUES($1,$2,'RUNNING',$3::jsonb) ON CONFLICT DO NOTHING RETURNING state,payload",[t,k,JSON.stringify(payload)]);
+   if(!insert.rows[0]){insert=await query("UPDATE tcog_model_operations SET state='RUNNING',payload=$4::jsonb WHERE tenant=$1 AND id=$2 AND state='DAILY_LIMIT' AND payload->>'budget_day'<>$3 RETURNING state,payload",[t,k,day,JSON.stringify(payload)]);if(!insert.rows[0])return {allowed:false,operation:await this.modelOperation(t,k)};}
+   const budget=await query('INSERT INTO tcog_model_budget(tenant,day,calls) VALUES($1,$2::date,1) ON CONFLICT(tenant,day) DO UPDATE SET calls=tcog_model_budget.calls+1 WHERE tcog_model_budget.calls<$3 RETURNING calls',[t,day,limit]);
+   if(!budget.rows[0]){await this.modelFinish(t,k,'DAILY_LIMIT',payload);return {allowed:false,operation:{state:'DAILY_LIMIT',payload}};}
+   return {allowed:true,operation:insert.rows[0]};
+  },
+  async modelFinish(t,k,state,payload){const r=await query("UPDATE tcog_model_operations SET state=$3,payload=$4::jsonb WHERE tenant=$1 AND id=$2 AND state='RUNNING' RETURNING id",[t,k,state,JSON.stringify(payload)]);if(!r.rows.length)throw Error('AI operation state conflict');},
   async agentGetConfig(t){const r=await query('SELECT payload,revision FROM tcog_agent_config WHERE tenant=$1',[t]);return r.rows[0]?{...r.rows[0].payload,revision:r.rows[0].revision}:undefined;},
   async agentConfig(t,expected,data){const r=await query(`INSERT INTO tcog_agent_config(tenant,revision,payload) SELECT $1,1,$3::jsonb WHERE $2::integer=0
    ON CONFLICT(tenant) DO UPDATE SET payload=EXCLUDED.payload,revision=tcog_agent_config.revision+1 WHERE tcog_agent_config.revision=$2::integer RETURNING payload,revision`,[t,expected,JSON.stringify(data)]);
