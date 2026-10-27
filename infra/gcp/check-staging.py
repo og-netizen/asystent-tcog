@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Use short-lived CI credentials without printing tokens or runtime config."""
-import json, subprocess, urllib.request, urllib.error
+import json, os, subprocess, urllib.request, urllib.error
 
 PROJECT = 'psychic-order-512811-k6'
 REGION = 'europe-west3'
@@ -13,7 +13,7 @@ description = json.loads(command('run', 'services', 'describe', SERVICE, '--regi
 url = description['status']['url']
 if not url.startswith('https://') or not url.endswith('.run.app'):
     raise RuntimeError('Unexpected Cloud Run URL')
-token = command('auth', 'print-identity-token', '--audiences='+url)
+token = os.environ['TCOG_ID_TOKEN']
 
 def request(path, authenticated=True, method='GET'):
     req = urllib.request.Request(url+path, headers={'Authorization': 'Bearer '+token} if authenticated else {}, method=method, data=b'{}' if method=='POST' else None)

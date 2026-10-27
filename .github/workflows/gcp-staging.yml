@@ -67,5 +67,27 @@ jobs:
       - name: Deploy private staging in setup mode
         run: |
           gcloud run deploy tcog-staging --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$GCP_IMAGE:$GITHUB_SHA" --service-account="tcog-runtime@$GCP_PROJECT.iam.gserviceaccount.com" --port=8080 --cpu=1 --memory=512Mi --min-instances=0 --max-instances=1 --concurrency=8 --timeout=60 --execution-environment=gen2 --set-env-vars=TCOG_SETUP_MODE=true --quiet
+      - name: Read the exact service audience
+        id: cloud_url
+        shell: python
+        run: |
+          import os, subprocess
+          url=subprocess.check_output(['gcloud','run','services','describe','tcog-staging','--project=psychic-order-512811-k6','--region=europe-west3','--format=value(status.url)'],text=True).strip()
+          assert url.startswith('https://') and url.endswith('.run.app')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('url='+url+'\n')
+      - name: Generate an ID token through federation
+        id: invoke_token
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: psychic-order-512811-k6
+          workload_identity_provider: projects/411889473620/locations/global/workloadIdentityPools/tcog-github/providers/github
+          service_account: tcog-github-deployer@psychic-order-512811-k6.iam.gserviceaccount.com
+          token_format: id_token
+          id_token_audience: ${{ steps.cloud_url.outputs.url }}
+          id_token_include_email: true
+          create_credentials_file: false
+          export_environment_variables: false
       - name: Verify private access and disabled writes
+        env:
+          TCOG_ID_TOKEN: ${{ steps.invoke_token.outputs.id_token }}
         run: python3 infra/gcp/check-staging.py
