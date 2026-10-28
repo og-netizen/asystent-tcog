@@ -1,6 +1,9 @@
+import {createMemoryStateStore} from './state-store.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createFiretms,projectFiretms,firetmsTransport} from './firetms.mjs';
+
+function forwardingStore(basePoint='INVOICE_RECEIPT',days=35){const store=createMemoryStateStore();store.memoryLatest=async()=>({operation:'upsert',revision:1,content:{rule:JSON.stringify({version:1,departmentId:'department',receiptDescription:'od otrzymania dokumentów',apiBasePoint:basePoint,carriers:['carrier-1','carrier-a','carrier-b'].map(id=>({id,days}))})}});return store;}
 test('FireTMS uses bounded read endpoints and strips financial and unknown fields',async()=>{
  const calls=[];
  const client=createFiretms({FIRETMS_API_KEY:'fake'},async(url,key)=>{
@@ -131,13 +134,14 @@ test('External carrier truck creates an unconfirmed forwarding order and is disc
   if(m==='POST'){writes.push({u,body});return {id:'forward-1'};}
   if(u.pathname==='/api/internal-trucks')return {items:[]};
   if(u.pathname==='/api/external-trucks')return {items:[{id:'external-1',regNumber:'WPR1810T',carrierId:'carrier-1'}]};
+  if(u.pathname==='/api/departments')return {items:[{id:'department'}]};
   if(u.pathname==='/api/loads')return {items:[{id:'load-1'}]};
   if(u.pathname==='/api/contractors')return {items:[{id:'carrier-1',carrier:true,deleted:false,grade:'NEUTRAL'}]};
   return {id:'forward-1',status:'NEW'};
- });
+ },forwardingStore());
  const read=await c.run('firetms_list',{resource:'trucks',filter:'WPR1810T'});assert.equal(read.data.items[0].id,'external-1');
  const data={truckId:'external-1',loadIds:['load-1']};const p=await c.run('firetms_preview_create_transport_order',{data});assert.equal(p.path,'/forwarding-order');
- const r=await c.run('firetms_create_transport_order',{data,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,{...data,carrierId:'carrier-1',cost:{fixedAmount:1,currencyCode:'EUR'},notes:writes[0].body.notes});assert.ok(writes[0].body.notes.includes('KWOTY TYMCZASOWE'));
+ const r=await c.run('firetms_create_transport_order',{data,review_token:p.review_token});assert.equal(r.verification.status,'NEW');assert.equal(writes[0].u.pathname,'/api/forwarding-order');assert.equal(writes[0].u.searchParams.get('confirm'),'false');assert.deepEqual(writes[0].body,{...data,carrierId:'carrier-1',departmentId:'department',paymentTerm:{basePoint:'INVOICE_RECEIPT',daysOffset:35,offsetType:'SET_AMOUNT_OF_DAYS'},cost:{fixedAmount:1,currencyCode:'EUR'},notes:writes[0].body.notes});assert.ok(writes[0].body.notes.includes('KWOTY TYMCZASOWE'));
 });
 test('Definite vendor validation rejection reports HTTP and field names and never repeats the attempt',async()=>{
  let posts=0;const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='GET')return {items:[]};posts++;throw Error('FireTMS HTTP 400 fields price');});
@@ -252,8 +256,9 @@ test('Carrier resolution is bound to the preview; changing truck carrier cannot 
   if(u.pathname==='/api/internal-trucks')return {items:[]};
   if(u.pathname==='/api/external-trucks')return {items:[{id:'truck',carrierId:carrier}]};
   if(u.pathname==='/api/contractors')return {items:[{id:carrier,carrier:true,deleted:false,grade:'NEUTRAL'}]};
+  if(u.pathname==='/api/departments')return {items:[{id:'department'}]};
   return {items:[{id:'load'}]};
- });
+ },forwardingStore());
  const data={truckId:'truck',loadIds:['load']};const p=await c.run('firetms_preview_create_transport_order',{data});
  assert.equal(p.data.carrierId,'carrier-a');carrier='carrier-b';
  await assert.rejects(c.run('firetms_create_transport_order',{data,review_token:p.review_token}),/carrier changed/);assert.equal(posts,0);
@@ -290,4 +295,10 @@ test('MCP exposes structured vendor rejection and preserves it on repeated rejec
   }
   assert.equal(posts,1);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('External preview refuses unspecified receipt basis before any POST',async()=>{
+ let posts=0;const store=forwardingStore(null);
+ const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='POST'){posts++;return {};}if(u.pathname.endsWith('/internal-trucks'))return {items:[]};if(u.pathname.endsWith('/external-trucks'))return {items:[{id:'truck',carrierId:'carrier-1'}]};if(u.pathname.endsWith('/contractors'))return {items:[{id:'carrier-1',carrier:true,deleted:false,grade:'NEUTRAL'}]};return {items:[{id:'load'}]};},store);
+ await assert.rejects(c.run('firetms_preview_create_transport_order',{data:{truckId:'truck',loadIds:['load']}}),/receipt basis/);assert.equal(posts,0);
 });

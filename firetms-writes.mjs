@@ -1,3 +1,4 @@
+import {memoryKey} from './operational-memory.mjs';
 import {createMemoryStateStore} from './state-store.mjs';
 import {readFileSync} from 'node:fs';
 import {randomBytes,createHash} from 'node:crypto';
@@ -91,7 +92,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
  const provisionalNote='KWOTY TYMCZASOWE: przychód 1 EUR i koszt 1 EUR do ustalenia i zmiany przez agenta zamykającego zlecenie po wykonaniu przewozu. Nie są stawką ostateczną.';
  function payloadFor(name,a,context){
   if(name==='firetms_create_load')return {...a.data,price:{amount:1,currencyCode:'EUR'},internalNote:[a.data.internalNote,provisionalNote].filter(Boolean).join('\n')};
-  if(name==='firetms_create_transport_order'&&context.target==='/forwarding-order')return {...a.data,carrierId:context.carrierId,cost:{fixedAmount:1,currencyCode:'EUR'},notes:provisionalNote};
+  if(name==='firetms_create_transport_order'&&context.target==='/forwarding-order')return {...a.data,carrierId:context.carrierId,departmentId:context.departmentId,paymentTerm:context.paymentTerm,cost:{fixedAmount:1,currencyCode:'EUR'},notes:provisionalNote+'\n'+context.paymentNote};
   return a.data;
  }
  const fingerprint=(n,a)=>createHash('sha256').update(JSON.stringify([n,a.loadId,a.data])).digest('hex');
@@ -131,6 +132,18 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
   }
   throw Error('FireTMS carrier lookup exceeded bounded search; inspect contractor before retry');
  }
+ async function forwardingSettings(carrierId){
+  const {key}=memoryKey({kind:'rule',client_key:'firetms-forwarding',context:{topic:'carrier-payment-policy'}});
+  const record=await stateStore.memoryLatest(env.WFIRMA_COMPANY_ID,key);
+  if(!record||record.operation==='retract')throw Error('FireTMS forwarding policy missing');
+  let policy;try{policy=JSON.parse(record.content.rule);}catch{throw Error('FireTMS forwarding policy invalid');}
+  const carrier=policy.carriers?.find(c=>c.id===carrierId);
+  if(policy.version!==1||!carrier||!Number.isInteger(carrier.days)||carrier.days<1||carrier.days>365||typeof policy.departmentId!=='string'||! /^[A-Za-z0-9-]{1,80}$/.test(policy.departmentId)||typeof policy.receiptDescription!=='string'||policy.receiptDescription.length>200||/[\r\n]/.test(policy.receiptDescription))throw Error('FireTMS forwarding policy invalid or carrier missing');
+  if(!['INVOICE_CREATION','INVOICE_ISSUANCE','INVOICE_RECEIPT','SELL_DATE'].includes(policy.apiBasePoint))throw Error('FireTMS payment receipt basis requires operator decision');
+  let found=false;for(let page=1;page<=20;page++){const d=await request('/departments',{page:String(page),size:'50'});if(!Array.isArray(d.items))throw Error('FireTMS invalid departments response');if(d.items.some(x=>x.id===policy.departmentId)){found=true;break;}if(d.items.length<50||d.maxPageNumber<=page)break;}
+  if(!found)throw Error('FireTMS configured department not found');
+  return {departmentId:policy.departmentId,paymentTerm:{basePoint:policy.apiBasePoint,daysOffset:carrier.days,offsetType:'SET_AMOUNT_OF_DAYS'},paymentNote:'Termin płatności: '+carrier.days+' dni '+policy.receiptDescription+'.',policyRevision:record.revision};
+ }
  async function preflight(name,a){
   if(name!=='firetms_create_transport_order')await verifyUnits(a.data);
   if(name==='firetms_create_load'&&a.data.clientOrderNumber){
@@ -151,7 +164,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
     // The API returns statusDescription, not a documented eligibility enum. Unknown/localized values remain vendor-validated.
     if(/^(DRAFT|REMOVABLE_DRAFT|SZKIC)$/i.test(l.statusDescription?.trim()||''))throw Error('FireTMS load is draft; complete client load before assignment');
    }
-   return {target:external?'/forwarding-order':'/transport-order',...(external?{carrierId}:{})};
+   return {target:external?'/forwarding-order':'/transport-order',...(external?{carrierId,...await forwardingSettings(carrierId)}:{})};
   }
   if(name==='firetms_update_load')await findLoad(a.loadId);
  }

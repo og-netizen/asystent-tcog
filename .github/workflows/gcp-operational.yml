@@ -13,6 +13,8 @@ on:
       - 'agent-queue.mjs'
       - 'gmail-oauth.mjs'
       - 'state-store.mjs'
+      - 'firetms-writes.mjs'
+      - 'firetms.mjs'
 permissions:
   contents: read
 concurrency:
