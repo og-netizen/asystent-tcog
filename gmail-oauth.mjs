@@ -63,7 +63,7 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
   const allowed=['https://oauth2.googleapis.com/token','https://gmail.googleapis.com/gmail/v1/users/me/profile'];
   const gmailPath=url.startsWith('https://gmail.googleapis.com/gmail/v1/users/me/')?url.slice('https://gmail.googleapis.com/gmail/v1/users/me/'.length):'';
   const method=options.method||'GET';
-  if(!allowed.includes(url)&&!((method==='GET'&&(['labels','settings/filters'].includes(gmailPath)||mailReadPath(gmailPath)))||(method==='POST'&&gmailPath==='settings/filters')||(method==='DELETE'&&/^settings\/filters\/[A-Za-z0-9_-]{1,256}$/.test(gmailPath))))throw Error('google_destination');
+  if(!allowed.includes(url)&&!((method==='GET'&&(['labels','settings/filters'].includes(gmailPath)||/^threads\/[a-f0-9]{1,64}\?format=full$/.test(gmailPath)||mailReadPath(gmailPath)))||(method==='POST'&&['settings/filters','messages/send'].includes(gmailPath))||(method==='DELETE'&&/^settings\/filters\/[A-Za-z0-9_-]{1,256}$/.test(gmailPath))))throw Error('google_destination');
   const response=await fetchImpl(url,{...options,redirect:'error',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Error('google_http_'+response.status);
   if(response.status===204)return {};
@@ -90,9 +90,18 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
  }
  async function checkSaved(){return profile(await accessSaved());}
  async function request(method,path,body){
+  if(path==='messages/send')throw Error('google_destination');
   // The allowlist in google() bounds every call, including future callers.
   const access=await accessSaved();
   return google('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{method,headers:{Authorization:'Bearer '+access,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ }
+ async function sendOperator(raw){
+  if(email!=='og@tcog.pl'||typeof raw!=='string'||raw.length>40000||!/^[A-Za-z0-9_-]+$/.test(raw))throw Error('google_destination');
+  const msg=Buffer.from(raw,'base64url').toString('utf8'),head=msg.split('\r\n\r\n')[0];
+  const lines=head.split('\r\n');
+  if(lines.filter(x=>/^To:/i.test(x)).length!==1||!lines.includes('To: og@tcog.pl')||lines.filter(x=>/^From:/i.test(x)).length!==1||!lines.includes('From: og@tcog.pl')||lines.some(x=>/^(cc|bcc):/i.test(x))||!lines.includes('X-TCOG-Agent: operator-review-v1'))throw Error('google_destination');
+  const access=await accessSaved();
+  return google('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+access,'Content-Type':'application/json'},body:JSON.stringify({raw})});
  }
  async function handle(req,res,url) {
   if(!url.pathname.startsWith('/google/'))return false;
@@ -146,5 +155,5 @@ export function createGmailOAuth(env,{fetchImpl=fetch,now=Date.now}={}) {
    return page(res,400,'Nie ukończono połączenia Gmail',`<p>${escape(messages[code]||'Połączenie z Google nie powiodło się. Sprawdź Gmail API, dane OAuth i dokładny adres przekierowania.')}</p><p>Kod: ${escape(code)}</p><p><a href="/google/oauth/start">Wróć do połączenia</a></p>`);
   }
  }
- return {handle,checkSaved,request,redirectUri,async readSession(){const access=await accessSaved();return path=>{if(!mailReadPath(path))throw Error('google_destination');return google('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{method:'GET',headers:{Authorization:'Bearer '+access}});};}};
+ return {handle,checkSaved,request,sendOperator,async readOperatorThread(id){if(!/^[a-f0-9]{1,64}$/.test(id||''))throw Error('google_destination');return request('GET','threads/'+id+'?format=full');},redirectUri,async readSession(){const access=await accessSaved();return path=>{if(!mailReadPath(path))throw Error('google_destination');return google('https://gmail.googleapis.com/gmail/v1/users/me/'+path,{method:'GET',headers:{Authorization:'Bearer '+access}});};}};
 }

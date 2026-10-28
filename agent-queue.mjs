@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {isAgentGeneratedMail} from './agent-mail.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const plain=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const only=(a,keys)=>{if(!plain(a)||Object.keys(a).some(k=>!keys.includes(k)))throw Error('Agent invalid arguments');};
@@ -89,8 +90,9 @@ export function createAgentQueue(store,oauth,tenant,{now=Date.now}={}){
   if(page.messages!==undefined&&!Array.isArray(page.messages))throw Error('Agent invalid Gmail response');
   for(const item of (page.messages||[]).slice(0,a.limit??10)){
    if(!/^[a-f0-9]{1,64}$/.test(item.id||''))throw Error('Agent invalid Gmail response');
-   const m=await read('messages/'+item.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To');const source=projectMetadata(m);
+   const m=await read('messages/'+item.id+'?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=X-TCOG-Agent');const source=projectMetadata(m);
    if(source.message_id!==item.id)throw Error('Agent invalid Gmail response');
+   if(isAgentGeneratedMail(m.payload?.headers)){skipped.push({message_id:item.id,reason:'agent_generated'});continue;}
    if(!source.label_ids.includes(a.label_id)||source.label_ids.some(x=>['SPAM','TRASH','SENT','DRAFT'].includes(x))||Date.parse(source.received_at)<Date.parse(config.start_after)){skipped.push({message_id:item.id,reason:'out_of_scope'});continue;}
    const conflict=source.label_ids.some(x=>config.exclude_label_ids.includes(x));
    const taskId=hash(tenant+'\0'+mailbox.toLowerCase()+'\0'+source.message_id);const old=await store.agentTask(tenant,taskId);

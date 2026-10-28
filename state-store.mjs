@@ -5,11 +5,14 @@ const copy=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
 
 // Memory adapter remains for existing Render/tests. Cloud startup requires SQL.
 export function createMemoryStateStore({now=Date.now}={}){
- const records=new Map(), memory=new Map(), agentConfigs=new Map(), jobs=new Map(), modelOps=new Map(), modelBudgets=new Map();
+ const records=new Map(), memory=new Map(), agentConfigs=new Map(), jobs=new Map(), modelOps=new Map(), modelBudgets=new Map(), operatorMail=new Map();
  const id=(n,k)=>n+':'+keyOf(n,k);
  const live=(n,k)=>{const r=records.get(id(n,k));if(r&&r.expires>now())return r;records.delete(id(n,k));};
  return {
   async initialize(){},async close(){},
+  async operatorMailReserve(t,k,p){const id=t+':'+k;if(operatorMail.has(id))return {created:false,record:copy(operatorMail.get(id))};const record={state:'SENDING',payload:copy(p)};operatorMail.set(id,record);return {created:true,record:copy(record)};},
+  async operatorMailFinish(t,k,state,p){const id=t+':'+k;if(operatorMail.get(id)?.state!=='SENDING')throw Error('Mail state conflict');operatorMail.set(id,{state,payload:copy(p)});},
+  async operatorMailGet(t,k){return copy(operatorMail.get(t+':'+k));},
   async modelOperation(t,k){return copy(modelOps.get(t+':'+k));},
   async modelReserve(t,k,day,limit,payload){payload={...payload,budget_day:day};const key=t+':'+k,existing=modelOps.get(key);if(existing&&!(existing.state==='DAILY_LIMIT'&&existing.payload.budget_day!==day))return {allowed:false,operation:copy(existing)};const op={state:'RUNNING',payload:copy(payload)};modelOps.set(key,op);const budgetKey=t+':'+day,count=modelBudgets.get(budgetKey)||0;if(count>=limit){op.state='DAILY_LIMIT';return {allowed:false,operation:copy(op)};}modelBudgets.set(budgetKey,count+1);return {allowed:true,operation:copy(op)};},
   async modelFinish(t,k,state,payload){const key=t+':'+k;if(modelOps.get(key)?.state!=='RUNNING')throw Error('AI operation state conflict');modelOps.set(key,{state,payload:copy(payload)});},
@@ -53,8 +56,12 @@ export function createPostgresStateStore(pool){
    await query('CREATE INDEX IF NOT EXISTS tcog_agent_jobs_list ON tcog_agent_jobs(tenant,created_at DESC,id)');
    await query("CREATE INDEX IF NOT EXISTS tcog_agent_jobs_thread ON tcog_agent_jobs(tenant, (payload->'source'->>'thread_id'))");
    await query('CREATE TABLE IF NOT EXISTS tcog_model_operations(tenant text NOT NULL,id text NOT NULL,state text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(tenant,id))');
-   await query('CREATE TABLE IF NOT EXISTS tcog_model_budget(tenant text NOT NULL,day date NOT NULL,calls integer NOT NULL,PRIMARY KEY(tenant,day))');},
+   await query('CREATE TABLE IF NOT EXISTS tcog_model_budget(tenant text NOT NULL,day date NOT NULL,calls integer NOT NULL,PRIMARY KEY(tenant,day))');
+   await query('CREATE TABLE IF NOT EXISTS tcog_operator_mail(tenant text NOT NULL,id text NOT NULL,state text NOT NULL,payload jsonb NOT NULL,PRIMARY KEY(tenant,id))');},
   async close(){await pool.end?.();},
+  async operatorMailReserve(t,k,p){const r=await query("INSERT INTO tcog_operator_mail(tenant,id,state,payload) VALUES($1,$2,'SENDING',$3::jsonb) ON CONFLICT DO NOTHING RETURNING state,payload",[t,k,JSON.stringify(p)]);return r.rows[0]?{created:true,record:r.rows[0]}:{created:false,record:await this.operatorMailGet(t,k)};},
+  async operatorMailFinish(t,k,state,p){const r=await query("UPDATE tcog_operator_mail SET state=$3,payload=$4::jsonb WHERE tenant=$1 AND id=$2 AND state='SENDING' RETURNING id",[t,k,state,JSON.stringify(p)]);if(!r.rows.length)throw Error('Mail state conflict');},
+  async operatorMailGet(t,k){return (await query('SELECT state,payload FROM tcog_operator_mail WHERE tenant=$1 AND id=$2',[t,k])).rows[0];},
   async modelOperation(t,k){return (await query('SELECT state,payload FROM tcog_model_operations WHERE tenant=$1 AND id=$2',[t,k])).rows[0];},
   async modelReserve(t,k,day,limit,payload){
    payload={...payload,budget_day:day};

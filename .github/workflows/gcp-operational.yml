@@ -9,6 +9,10 @@ on:
       - 'infra/gcp/check-public.py'
       - 'server.mjs'
       - 'agent-ai.mjs'
+      - 'agent-mail.mjs'
+      - 'agent-queue.mjs'
+      - 'gmail-oauth.mjs'
+      - 'state-store.mjs'
 permissions:
   contents: read
 concurrency:

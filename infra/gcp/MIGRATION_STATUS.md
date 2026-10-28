@@ -155,3 +155,15 @@ App via `.app.json` and `extensions.com.openai.apps`, removing both bundled MCP
 configuration files and any compatibility `mcpServers` declaration. Preserve
 identity, sharing, and presentation. No App ID is known yet; do not invent one
 or bind it to the old Render App. Until this is done the plugin is not web-ready.
+
+## Operator email review channel — 2026-10-28
+
+Implementation adds agent_mail_send for a saved DONE proposal and
+agent_mail_replies for operator responses in the returned Gmail thread.
+Delivery is fixed to og@tcog.pl. PostgreSQL reserves the operation before send;
+SENDING/UNKNOWN are never automatically retried. Self-generated mail is excluded
+from intake. Replies remain untrusted review data and cannot execute business
+writes. This is an on-demand review channel: no scheduler/background worker,
+automatic proposal generation, or automatic handling of replies is activated.
+Local suite: 91 tests passed, plus successful-send/reply regression passed.
+Deployment and real Gmail delivery verification remain pending.
