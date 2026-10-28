@@ -111,7 +111,7 @@ export function createApp(env,upstream=readWfirma,services={}){
     if(!pdf)return json(res,404,{error:'report_expired_or_not_found'});
     res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="plan-trasy.pdf"','Cache-Control':'no-store, private','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Length':pdf.length});return res.end(pdf);
    }
-   if(req.method==='GET'&&(path==='/'||path==='/health'))return json(res,200,{service:'Asystent TCOG',version:'0.12.0',mode:'scoped-operational-writes',status:'running'});
+   if(req.method==='GET'&&(path==='/'||path==='/health'))return json(res,200,{service:'Asystent TCOG',version:'0.13.0',mode:'scoped-operational-writes',status:'running'});
    if(req.method==='GET'&&['/.well-known/oauth-authorization-server','/.well-known/oauth-authorization-server/mcp','/.well-known/openid-configuration'].includes(path))return json(res,200,metadata);
    if(req.method==='GET'&&['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'].includes(path))return json(res,200,{resource:audience,authorization_servers:[origin],scopes_supported:[scope,'dbk:read','firetms:read','firetms:write','ptv:read','gmail:read','gmail:write','memory:read','memory:write','ai:generate'],bearer_methods_supported:['header']});
    if(path==='/authorize'&&req.method==='GET'){
