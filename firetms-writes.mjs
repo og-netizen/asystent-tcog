@@ -9,7 +9,7 @@ const canonicalContext=x=>Array.isArray(x)?x.map(canonicalContext):x&&typeof x==
 const transportSchema=obj({truckId:id,loadIds:{type:'array',items:id,minItems:1,maxItems:30}},['truckId','loadIds']);
 const operations=[
  ['firetms_create_load','Utwórz zlecenie KLIENTA (load). Zgodnie z zasadą TCOG przychód tymczasowy wynosi 1 EUR i jest oznaczony do zmiany przy zamknięciu. Najpierw firetms_preview_create_load, potem to narzędzie z otrzymanym review_token. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie podawaj dowolnych cen, płatności ani faktur; serwer dodaje tylko uzgodnione tymczasowe 1 EUR.',obj({data:schemas.createLoad,review_token:{type:'string',maxLength:100}},['data'])],
- ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące auto własne lub zewnętrzne z istniejących loadIds. Dla auta zewnętrznego powstaje zlecenie spedycyjne NEW bez potwierdzenia. FireTMS może potwierdzić transport własny i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw firetms_preview_create_transport_order, potem to narzędzie z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,review_token:{type:'string',maxLength:100}},['data'])],
+ ['firetms_create_transport_order','Utwórz zlecenie TRANSPORTOWE na istniejące auto własne lub zewnętrzne z istniejących loadIds. Dla auta zewnętrznego powstaje zlecenie spedycyjne z żądaniem potwierdzenia; sprawdź faktyczny status i numer w wyniku. FireTMS może potwierdzić transport własny i dobrać domyślną naczepę/kierowców oraz policzyć koszt z ustawień auta. Nie wysyła planu kierowcy. Najpierw firetms_preview_create_transport_order, potem to narzędzie z review_token. Sprawdź zestaw i status w wyniku.',obj({data:transportSchema,review_token:{type:'string',maxLength:100}},['data'])],
  ['firetms_update_load','Wykonaj edycję zlecenia KLIENTA (loadId, nie ID zlecenia transportowego). data jest kompletnym zestawem pól operacyjnych, nie częściową łatką. Najpierw firetms_preview_update_load; wykonanie PUT jest domyślnie zablokowane, dopóki nie potwierdzimy z FireTMS zachowania pominiętej ceny. Nie zmienia przypisania auta. Nie obiecuj zapisu na podstawie samego podglądu.',obj({loadId:id,data:schemas.updateLoad,review_token:{type:'string',maxLength:100}},['loadId','data'])]
 ];
 // Separate public contracts: preview never accepts an execution switch.
@@ -165,7 +165,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
     // The API returns statusDescription, not a documented eligibility enum. Unknown/localized values remain vendor-validated.
     if(/^(DRAFT|REMOVABLE_DRAFT|SZKIC)$/i.test(l.statusDescription?.trim()||''))throw Error('FireTMS load is draft; complete client load before assignment');
    }
-   return {target:external?'/forwarding-order':'/transport-order',...(external?{carrierId,...await forwardingSettings(carrierId)}:{})};
+   return {target:external?'/forwarding-order':'/transport-order',...(external?{carrierId,confirm:true,checkTransportSetConflicts:true,...await forwardingSettings(carrierId)}:{})};
   }
   if(name==='firetms_update_load')await findLoad(a.loadId);
  }
@@ -186,7 +186,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
    const target=context.target;
    const review_token=randomBytes(24).toString('base64url');
    await save(review_token,{hash:fingerprint(name,a),expires:Date.now()+900000,state:'prepared',target,context});
-   return {status:'preview_only',written:false,method,path:target,data:payloadFor(name,a,context),review_token,expires_in_seconds:900,
+   return {status:'preview_only',written:false,method,path:target,...(target==='/forwarding-order'?{query:{confirm:'true',checkTransportSetConflicts:'true'}}:{}),data:payloadFor(name,a,context),review_token,expires_in_seconds:900,
     execution_enabled:name!=='firetms_update_load'||env.FIRETMS_OPERATIONAL_PUT_VERIFIED==='true',
     warning:name==='firetms_update_load'?'Wykonanie PUT domyślnie zablokowane: niepotwierdzone zachowanie pominiętych pól i ceny.':name==='firetms_create_transport_order'?'Sprawdzono auto, przypisanie load i aktywnego przewoźnika dla auta zewnętrznego. Pozostałe warunki statusu sprawdza FireTMS. Zestaw domyślny wymaga kontroli po zapisie.':'Podgląd nie potwierdza walidacji po stronie FireTMS, w tym geokodowania i limitów klienta. Bez referencji klienta nie gwarantuje wykrycia duplikatów. Po utracie odpowiedzi sprawdź listę przed ponowną próbą.'};
   }
@@ -201,7 +201,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
   try{const context=await preflight(name,a)||{target:path};if(JSON.stringify(canonicalContext(context))!==JSON.stringify(canonicalContext(r.context)))throw Error('FireTMS truck type or carrier changed; prepare again');}catch(e){r.state='prepared';await save(a.review_token,r);throw e;}
   r.state='in_progress';await save(a.review_token,r);
   try{
-   const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'false'}:params,method,payloadFor(name,a,r.context));
+   const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'true',checkTransportSetConflicts:'true'}:params,method,payloadFor(name,a,r.context));
    // Never call a status complete/confirmed unless the subsequent read says so.
    let verification=null;
    if(name==='firetms_create_transport_order'&&data?.id){try{verification=await request('/orders/'+data.id,{});}catch{verification={readback_failed:true};}}
