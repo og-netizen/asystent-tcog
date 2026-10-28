@@ -302,3 +302,15 @@ test('External preview refuses unspecified receipt basis before any POST',async(
  const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET')=>{if(m==='POST'){posts++;return {};}if(u.pathname.endsWith('/internal-trucks'))return {items:[]};if(u.pathname.endsWith('/external-trucks'))return {items:[{id:'truck',carrierId:'carrier-1'}]};if(u.pathname.endsWith('/contractors'))return {items:[{id:'carrier-1',carrier:true,deleted:false,grade:'NEUTRAL'}]};return {items:[{id:'load'}]};},store);
  await assert.rejects(c.run('firetms_preview_create_transport_order',{data:{truckId:'truck',loadIds:['load']}}),/receipt basis/);assert.equal(posts,0);
 });
+
+test('PostgreSQL key ordering cannot invalidate unchanged forwarding preview; changed policy still blocks',async()=>{
+ const {PGlite}=await import('@electric-sql/pglite');const {createPostgresStateStore}=await import('./state-store.mjs');const db=new PGlite(),store=createPostgresStateStore(db);await store.initialize();let days=35,revision=1,posts=0;
+ store.memoryLatest=async()=>({operation:'upsert',revision,content:{rule:JSON.stringify({version:1,departmentId:'department',receiptDescription:'od otrzymania faktury',apiBasePoint:'INVOICE_RECEIPT',carriers:[{id:'carrier-1',days}]})}});
+ const c=createFiretms({FIRETMS_API_KEY:'fake'},async(u,k,m='GET',body)=>{if(m==='POST'){posts++;assert.equal(body.paymentTerm.daysOffset,35);return {id:'order'};}if(u.pathname.endsWith('/internal-trucks'))return {items:[]};if(u.pathname.endsWith('/external-trucks'))return {items:[{id:'truck',carrierId:'carrier-1'}]};if(u.pathname.endsWith('/contractors'))return {items:[{id:'carrier-1',carrier:true,deleted:false,grade:'NEUTRAL'}]};if(u.pathname.endsWith('/departments'))return {items:[{id:'department'}]};if(u.pathname.endsWith('/loads'))return {items:[{id:'load'}]};return {id:'order',status:'NEW'};},store);
+ try{
+  const data={truckId:'truck',loadIds:['load']},preview=await c.run('firetms_preview_create_transport_order',{data});
+  const result=await c.run('firetms_create_transport_order',{data,review_token:preview.review_token});assert.equal(result.written,true);assert.equal(posts,1);
+  const second=await c.run('firetms_preview_create_transport_order',{data});days=30;revision++;
+  await assert.rejects(c.run('firetms_create_transport_order',{data,review_token:second.review_token}),/changed/);assert.equal(posts,1);
+ }finally{await db.close();}
+});

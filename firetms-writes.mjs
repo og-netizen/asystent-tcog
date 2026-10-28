@@ -5,6 +5,7 @@ import {randomBytes,createHash} from 'node:crypto';
 const schemas=JSON.parse(readFileSync(new URL('./firetms-schemas.json',import.meta.url),'utf8'));
 const obj=(properties,required=[])=>({type:'object',properties,required,additionalProperties:false});
 const id={type:'string',pattern:'^[A-Za-z0-9-]{1,80}$'};
+const canonicalContext=x=>Array.isArray(x)?x.map(canonicalContext):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonicalContext(x[k])])):x;
 const transportSchema=obj({truckId:id,loadIds:{type:'array',items:id,minItems:1,maxItems:30}},['truckId','loadIds']);
 const operations=[
  ['firetms_create_load','Utwórz zlecenie KLIENTA (load). Zgodnie z zasadą TCOG przychód tymczasowy wynosi 1 EUR i jest oznaczony do zmiany przy zamknięciu. Najpierw firetms_preview_create_load, potem to narzędzie z otrzymanym review_token. Nie zakłada jeszcze zlecenia na auto. API może utworzyć szkic DRAFT; sprawdź wynik. Nie podawaj dowolnych cen, płatności ani faktur; serwer dodaje tylko uzgodnione tymczasowe 1 EUR.',obj({data:schemas.createLoad,review_token:{type:'string',maxLength:100}},['data'])],
@@ -197,7 +198,7 @@ export function createFiretmsWrites(env,request,stateStore=createMemoryStateStor
   if(r.state!=='prepared')throw Error('FireTMS write outcome unknown or in progress; inspect system before retry');
   r=await stateStore.claim(ns,a.review_token,'prepared','checking');
   if(!r)throw Error('FireTMS write outcome unknown or in progress; inspect system before retry');
-  try{const context=await preflight(name,a)||{target:path};if(JSON.stringify(context)!==JSON.stringify(r.context))throw Error('FireTMS truck type or carrier changed; prepare again');}catch(e){r.state='prepared';await save(a.review_token,r);throw e;}
+  try{const context=await preflight(name,a)||{target:path};if(JSON.stringify(canonicalContext(context))!==JSON.stringify(canonicalContext(r.context)))throw Error('FireTMS truck type or carrier changed; prepare again');}catch(e){r.state='prepared';await save(a.review_token,r);throw e;}
   r.state='in_progress';await save(a.review_token,r);
   try{
    const data=await request(r.target,r.target==='/forwarding-order'?{confirm:'false'}:params,method,payloadFor(name,a,r.context));
