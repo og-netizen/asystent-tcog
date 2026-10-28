@@ -26,7 +26,7 @@ export function createOperatorMailer(store,oauth,tenant) {
   const task=await store.agentTask(tenant,op.payload.task_id);
   if(!task||task.source?.mailbox?.toLowerCase()!==EMAIL)throw Error('Mail mailbox mismatch');
   const d=op.payload.draft;
-  const message=composeOperatorMail({taskId:task.id,operationId,truck:d.truck_registration,client:d.client_key,plan:d.driver_message,questions:[...(d.missing_information||[]),...(d.warnings||[])],sourceUrl:'https://mail.google.com/mail/u/0/#all/'+task.source.message_id});
+  const message=composeOperatorMail({taskId:task.id,operationId,truck:d.truck_registration,client:d.client_key,plan:d.driver_message,questions:[...(op.payload.completeness?.findings||[]).map(f=>'Do sprawdzenia: możliwe pominięcie w planie: '+f.value),...(d.missing_information||[]),...(d.warnings||[])].slice(0,20).map(q=>String(q).replace(/\s+/g,' ').slice(0,300)),sourceUrl:'https://mail.google.com/mail/u/0/#all/'+task.source.message_id});
   const record={operation_id:operationId,task_id:task.id,message_id:message.messageId};
   const reservation=await store.operatorMailReserve(tenant,operationId,record);
   if(!reservation.created)return {sent:false,existing:true,record:reservation.record};
