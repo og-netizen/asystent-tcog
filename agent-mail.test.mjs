@@ -26,3 +26,12 @@ test('successful delivery persists Gmail thread and reads only operator replies'
  await channel.run('agent_mail_send',{operation_id:opId});assert.equal(calls,1);
  assert.deepEqual((await channel.run('agent_mail_replies',{operation_id:opId})).messages.map(x=>x.id),['333']);
 });
+
+for(const kind of ['memory','postgres'])test(`${kind}: draft history filters tenant/task and paginates`,async()=>{
+ const db=kind==='postgres'?new PGlite():null,store=db?createPostgresStateStore(db):createMemoryStateStore();await store.initialize();
+ for(let i=0;i<27;i++)await store.modelReserve('A',String(i).padStart(64,'0'),'2026-10-28',100,{task_id:i===26?'other':'task'});
+ await store.modelReserve('B','x','2026-10-28',10,{task_id:'task'});
+ const first=await store.modelOperations('A','task',0),second=await store.modelOperations('A','task',25);
+ assert.equal(first.length,25);assert.equal(second.length,1);assert.equal(first[0].id,'0'.repeat(64));assert.equal((await store.modelOperations('B','task',0)).length,1);assert.equal((await store.modelOperations('A','missing',0)).length,0);
+ await store.close();if(db)await db.close();
+});

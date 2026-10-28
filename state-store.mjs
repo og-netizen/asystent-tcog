@@ -14,6 +14,7 @@ export function createMemoryStateStore({now=Date.now}={}){
   async operatorMailFinish(t,k,state,p){const id=t+':'+k;if(operatorMail.get(id)?.state!=='SENDING')throw Error('Mail state conflict');operatorMail.set(id,{state,payload:copy(p)});},
   async operatorMailGet(t,k){return copy(operatorMail.get(t+':'+k));},
   async modelOperation(t,k){return copy(modelOps.get(t+':'+k));},
+  async modelOperations(t,taskId,offset){return copy([...modelOps.entries()].filter(([k,r])=>k.startsWith(t+':')&&(!taskId||r.payload.task_id===taskId)).map(([k,r])=>({id:k.slice(t.length+1),...r})).sort((a,b)=>a.id.localeCompare(b.id)).slice(offset,offset+25));},
   async modelReserve(t,k,day,limit,payload){payload={...payload,budget_day:day};const key=t+':'+k,existing=modelOps.get(key);if(existing&&!(existing.state==='DAILY_LIMIT'&&existing.payload.budget_day!==day))return {allowed:false,operation:copy(existing)};const op={state:'RUNNING',payload:copy(payload)};modelOps.set(key,op);const budgetKey=t+':'+day,count=modelBudgets.get(budgetKey)||0;if(count>=limit){op.state='DAILY_LIMIT';return {allowed:false,operation:copy(op)};}modelBudgets.set(budgetKey,count+1);return {allowed:true,operation:copy(op)};},
   async modelFinish(t,k,state,payload){const key=t+':'+k;if(modelOps.get(key)?.state!=='RUNNING')throw Error('AI operation state conflict');modelOps.set(key,{state,payload:copy(payload)});},
   async agentGetConfig(t){return copy(agentConfigs.get(t));},
@@ -63,6 +64,7 @@ export function createPostgresStateStore(pool){
   async operatorMailFinish(t,k,state,p){const r=await query("UPDATE tcog_operator_mail SET state=$3,payload=$4::jsonb WHERE tenant=$1 AND id=$2 AND state='SENDING' RETURNING id",[t,k,state,JSON.stringify(p)]);if(!r.rows.length)throw Error('Mail state conflict');},
   async operatorMailGet(t,k){return (await query('SELECT state,payload FROM tcog_operator_mail WHERE tenant=$1 AND id=$2',[t,k])).rows[0];},
   async modelOperation(t,k){return (await query('SELECT state,payload FROM tcog_model_operations WHERE tenant=$1 AND id=$2',[t,k])).rows[0];},
+  async modelOperations(t,taskId,offset){return (await query("SELECT id,state,payload FROM tcog_model_operations WHERE tenant=$1 AND ($2::text IS NULL OR payload->>'task_id'=$2) ORDER BY id LIMIT 25 OFFSET $3",[t,taskId??null,offset])).rows;},
   async modelReserve(t,k,day,limit,payload){
    payload={...payload,budget_day:day};
    let insert=await query("INSERT INTO tcog_model_operations(tenant,id,state,payload) VALUES($1,$2,'RUNNING',$3::jsonb) ON CONFLICT DO NOTHING RETURNING state,payload",[t,k,JSON.stringify(payload)]);
