@@ -96,7 +96,7 @@ export function createAgentQueue(store,oauth,tenant,{now=Date.now}={}){
    if(!source.label_ids.includes(a.label_id)||source.label_ids.some(x=>['SPAM','TRASH','SENT','DRAFT'].includes(x))||Date.parse(source.received_at)<Date.parse(config.start_after)){skipped.push({message_id:item.id,reason:'out_of_scope'});continue;}
    const conflict=source.label_ids.some(x=>config.exclude_label_ids.includes(x));
    const taskId=hash(tenant+'\0'+mailbox.toLowerCase()+'\0'+source.message_id);const old=await store.agentTask(tenant,taskId);
-   const previous=await store.agentThread(tenant,source.thread_id,taskId,mailbox.toLowerCase());
+   const previous=await store.agentThread(tenant,source.thread_id,taskId,mailbox.toLowerCase(),source.received_at);
    const task={id:taskId,state:conflict||previous?'NEEDS_CONTEXT':'RECEIVED',source:{...source,mailbox:mailbox.toLowerCase()},possible_plan_change:!!previous,previous_task_id:previous?.id??null,label_conflict:conflict,config_revision:config.revision,created_at:new Date(now()).toISOString(),ai_calls:0};
    if(a.dry_run!==false)candidates.push({...task,already_queued:!!old,written:false});
    else {const result=await store.agentEnqueue(tenant,task);candidates.push({...result.task,already_queued:!result.inserted,written:result.inserted});}

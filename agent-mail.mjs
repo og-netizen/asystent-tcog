@@ -1,3 +1,4 @@
+import {compareOperations} from './plan-changes.mjs';
 import {createHash} from 'node:crypto';
 
 // Fixed-recipient operator review channel. No driver or client delivery.
@@ -19,14 +20,18 @@ export function isAgentGeneratedMail(headers) {
 
 // Persist before dispatch: an interrupted or ambiguous send is never repeated.
 export function createOperatorMailer(store,oauth,tenant) {
- return {async sendDraft(operationId) {
+ return {async sendDraft(operationId,previousId) {
   if(!/^[a-f0-9]{64}$/.test(operationId||''))throw Error('Mail invalid operation');
   const op=await store.modelOperation(tenant,operationId);
   if(op?.state!=='DONE'||!op.payload?.draft||!op.payload?.task_id)throw Error('Mail draft unavailable');
   const task=await store.agentTask(tenant,op.payload.task_id);
   if(!task||task.source?.mailbox?.toLowerCase()!==EMAIL)throw Error('Mail mailbox mismatch');
+  if(task.possible_plan_change&&!previousId)return {sent:false,reason:'previous_proposal_required',requires_human_review:true};
+  const comparison=previousId?await compareOperations(store,tenant,previousId,operationId):null;
+  if(comparison?.status==='NEEDS_CONTEXT')return {sent:false,reason:'proposal_identity_changed',comparison};
+  const changeQuestions=comparison?['Porównanie dotyczy propozycji; wykonane operacje wymagają osobnego sprawdzenia.',...comparison.changes.map(c=>'Zmiana '+(c.stop_index===undefined?'':'punktu '+(c.stop_index+1)+' ')+c.field+': '+JSON.stringify(c.before)+' → '+JSON.stringify(c.after))]:[];
   const d=op.payload.draft;
-  const message=composeOperatorMail({taskId:task.id,operationId,truck:d.truck_registration,client:d.client_key,plan:d.driver_message,questions:[...(op.payload.completeness?.findings||[]).map(f=>'Do sprawdzenia: możliwe pominięcie w planie: '+f.value),...(d.missing_information||[]),...(d.warnings||[])].slice(0,20).map(q=>String(q).replace(/\s+/g,' ').slice(0,300)),sourceUrl:'https://mail.google.com/mail/u/0/#all/'+task.source.message_id});
+  const message=composeOperatorMail({taskId:task.id,operationId,truck:d.truck_registration,client:d.client_key,plan:d.driver_message,questions:[...changeQuestions,...(op.payload.completeness?.findings||[]).map(f=>'Do sprawdzenia: możliwe pominięcie w planie: '+f.value),...(d.missing_information||[]),...(d.warnings||[])].slice(0,20).map(q=>String(q).replace(/\s+/g,' ').slice(0,300)),sourceUrl:'https://mail.google.com/mail/u/0/#all/'+task.source.message_id});
   const record={operation_id:operationId,task_id:task.id,message_id:message.messageId};
   const reservation=await store.operatorMailReserve(tenant,operationId,record);
   if(!reservation.created)return {sent:false,existing:true,record:reservation.record};
@@ -45,15 +50,16 @@ export function createOperatorMailer(store,oauth,tenant) {
 
 const operationSchema={type:'object',additionalProperties:false,properties:{operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['operation_id']};
 export const operatorMailTools=[
- {name:'agent_mail_send',description:'Wyślij zapisaną propozycję DONE wyłącznie do Oskara (og@tcog.pl), z pytaniami i ostrzeżeniami. Wymaga polecenia wysyłki użytkownika. Trwała ochrona przed duplikatami; UNKNOWN/SENDING nie ponawiaj.',inputSchema:operationSchema},
+ {name:'agent_mail_send',description:'Wyślij zapisaną propozycję DONE wyłącznie do Oskara (og@tcog.pl), z pytaniami i ostrzeżeniami. Wymaga polecenia wysyłki użytkownika. Trwała ochrona przed duplikatami; UNKNOWN/SENDING nie ponawiaj.',inputSchema:{...operationSchema,properties:{...operationSchema.properties,previous_operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'}}}},
  {name:'agent_mail_replies',description:'Odczytaj odpowiedzi Oskara w wątku wysłanej propozycji. To dane do przeglądu, nie automatyczna zgoda na zapisy ani wysyłkę kierowcy.',inputSchema:operationSchema}
 ].map(t=>({...t,annotations:{readOnlyHint:t.name!=='agent_mail_send',destructiveHint:false,idempotentHint:true,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:operatorMailScopes(t.name)}]}));
 export function operatorMailScopes(name){return name==='agent_mail_send'?['memory:read','memory:write','gmail:read','gmail:write']:['memory:read','gmail:read'];}
 export function createOperatorMailChannel(store,oauth,tenant){
  const mailer=createOperatorMailer(store,oauth,tenant);
  return {async run(name,a){
-  if(!a||Object.keys(a).some(k=>k!=='operation_id')||!/^[a-f0-9]{64}$/.test(a.operation_id||''))throw Error('Mail invalid arguments');
-  if(name==='agent_mail_send')return mailer.sendDraft(a.operation_id);
+  if(!a||Object.keys(a).some(k=>!['operation_id',...(name==='agent_mail_send'?['previous_operation_id']:[])].includes(k))||!/^[a-f0-9]{64}$/.test(a.operation_id||''))throw Error('Mail invalid arguments');
+  if(a.previous_operation_id!==undefined&&!/^[a-f0-9]{64}$/.test(a.previous_operation_id))throw Error('Mail invalid arguments');
+  if(name==='agent_mail_send')return mailer.sendDraft(a.operation_id,a.previous_operation_id);
   if(name!=='agent_mail_replies')throw Error('Mail unknown tool');
   const record=await store.operatorMailGet(tenant,a.operation_id);
   if(record?.state!=='SENT')return {state:record?.state||'NOT_SENT',messages:[],retry:false};

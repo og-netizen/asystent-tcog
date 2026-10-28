@@ -1,3 +1,4 @@
+import {compareOperations} from './plan-changes.mjs';
 import {reviewPlan} from './plan-review.mjs';
 import {createHash,randomBytes} from 'node:crypto';
 import {extractPdf} from './pdf-extract.mjs';
@@ -14,11 +15,12 @@ export const aiTools=[
  {name:'agent_sources',description:'Odczytaj wiadomość zadania i tekst PDF-ów lokalnie, bez AI. Limity: 5 PDF, 6 MB/PDF, 30 stron/PDF. Sprawdź kompletność i ostrzeżenia; skany lub nieobsługiwane pliki wymagają przeglądu/OCR. Zewnętrzne linki z maila nie są pobierane.',inputSchema:schema({task_id:props.task_id},['task_id'])},
  {name:'agent_preview_draft',description:'Przygotuj podgląd zakresu płatnego wygenerowania propozycji planu, bez wywołania AI. Odczytuje źródła i zatwierdzone reguły wybranego klienta z prywatnej pamięci. Przekaż sprawdzone auto i klienta, kontekst poprzedniego stopu jeśli znany. ignored_attachment_ids tylko po jawnej zgodzie użytkownika na pominięcie konkretnych plików, np. logo; nie ignoruj dokumentów zlecenia. Zwraca review_token na 15 minut. Nie zmienia FireTMS ani kapownika.',inputSchema:schema(props,['task_id','client_key','truck_registration'])},
  {name:'agent_generate_draft',description:'Wykonaj jedno płatne wywołanie OpenAI po podglądzie i poleceniu użytkownika. Wymaga ai:generate i review_token. Wynik to wyłącznie propozycja wymagająca przeglądu: nie wysyła wiadomości ani nie zapisuje zlecenia. Przed PTV kilometry i trasa pozostają do uzupełnienia. Identyczny zakres korzysta z zapisanego wyniku; po niepewnym błędzie nie ponawiaj płatnego żądania.',inputSchema:schema({review_token:{type:'string'}},['review_token'])},
+ {name:'agent_compare_drafts',description:'Porównaj dwie zapisane propozycje DONE z tego samego wątku, wskazując poprzedni i obecny operation_id. Pokazuje zmienione punkty, daty, adresy, towar i referencje; nie ustala wykonanych operacji, nie tworzy zleceń i nie wywołuje AI.',inputSchema:schema({previous_operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'},current_operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'}},['previous_operation_id','current_operation_id'])},
  {name:'agent_review_draft',description:'Sprawdź możliwe pominięcia ilości, masy, LDM, godzin i oznaczonych identyfikatorów zapisanej propozycji względem aktualnie odczytanych źródeł. Bez AI i zapisów. Wynik wymaga oceny aktualności źródeł; nie dowodzi pełnej poprawności.',inputSchema:schema({operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'}},['operation_id'])},
  {name:'agent_draft_list',description:'Odczytaj zapisane wyniki propozycji bez wywołania AI. Filtruj po task_id; strony po 25, przejdź next_offset. Zwraca operation_id, status, auto, klienta i referencję. Nie wysyła maili.',inputSchema:schema({task_id:props.task_id,offset:{type:'integer',minimum:0,maximum:10000}})},
  {name:'agent_draft_result',description:'Odczytaj wynik lub niepewny status wygenerowania po operation_id. Nie wywołuje AI. Propozycja nie jest potwierdzonym planem ani utworzonym zleceniem.',inputSchema:schema({operation_id:{type:'string',pattern:'^[a-f0-9]{64}$'}},['operation_id'])}
 ].map(t=>({...t,annotations:{readOnlyHint:t.name!=='agent_generate_draft',destructiveHint:false,idempotentHint:true,openWorldHint:true},securitySchemes:[{type:'oauth2',scopes:aiScopes(t.name)}]}));
-export function aiScopes(name){return name==='agent_generate_draft'?['memory:read','memory:write','gmail:read','ai:generate']:name==='agent_ai_status'||['agent_draft_result','agent_draft_list'].includes(name)?['memory:read']:['memory:read','gmail:read'];}
+export function aiScopes(name){return name==='agent_generate_draft'?['memory:read','memory:write','gmail:read','ai:generate']:name==='agent_ai_status'||['agent_draft_result','agent_draft_list','agent_compare_drafts'].includes(name)?['memory:read']:['memory:read','gmail:read'];}
 const stopProps={operation:{type:'string',enum:['LOADING','UNLOADING','ATTACH_SEMITRAILER','LEAVE_SEMITRAILER','CUSTOMS_CLEARANCE','FERRY','OTHER']},address:{type:'string'},date:{type:['string','null']},reference:{type:['string','null']},cargo:{type:['string','null']},evidence:{type:'array',items:schema({source_id:{type:'string'},quote:{type:'string'}},['source_id','quote'])}};
 export const draftSchema=schema({client_key:{type:'string'},truck_registration:{type:'string'},main_reference:{type:['string','null']},driver_message:{type:'string'},stops:{type:'array',items:schema(stopProps,Object.keys(stopProps))},missing_information:{type:'array',items:{type:'string'}},warnings:{type:'array',items:{type:'string'}}},['client_key','truck_registration','main_reference','driver_message','stops','missing_information','warnings']);
 function validateDraft(x,input,sources){
@@ -84,6 +86,10 @@ export function createAgentAI(store,oauth,setup,tenant,{now=Date.now,pdfExtract=
  return {async run(name,a={}){
   if(name==='agent_ai_status'){only(a,[]);return {...await setup.status(),automatic_agent_running:false,scheduler_enabled:false,external_writes_enabled:false};}
   if(name==='agent_sources'){only(a,['task_id']);if(!/^[a-f0-9]{64}$/.test(a.task_id||''))throw Error('AI invalid arguments');return sources(a.task_id);}
+  if(name==='agent_compare_drafts'){
+   only(a,['previous_operation_id','current_operation_id']);if(!/^[a-f0-9]{64}$/.test(a.previous_operation_id||'')||!/^[a-f0-9]{64}$/.test(a.current_operation_id||''))throw Error('AI invalid arguments');
+   return {...await compareOperations(store,tenant,a.previous_operation_id,a.current_operation_id),ai_called:false,written:false};
+  }
   if(name==='agent_review_draft'){
    only(a,['operation_id']);if(!/^[a-f0-9]{64}$/.test(a.operation_id||''))throw Error('AI invalid arguments');
    const op=await store.modelOperation(tenant,a.operation_id);if(op?.state!=='DONE'||!op.payload.draft)throw Error('AI draft not available');

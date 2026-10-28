@@ -20,7 +20,7 @@ export function createMemoryStateStore({now=Date.now}={}){
   async agentGetConfig(t){return copy(agentConfigs.get(t));},
   async agentConfig(t,expected,data){if((agentConfigs.get(t)?.revision??0)!==expected)throw Error('Agent revision conflict');const r={...copy(data),revision:expected+1};agentConfigs.set(t,r);return copy(r);},
   async agentTask(t,k){return copy(jobs.get(t+':'+k));},
-  async agentThread(t,thread,except,mailbox){return copy([...jobs.entries()].filter(([k,r])=>k.startsWith(t+':')&&r.source.thread_id===thread&&r.source.mailbox===mailbox&&r.id!==except).map(([,r])=>r).sort((a,b)=>b.source.received_at.localeCompare(a.source.received_at))[0]);},
+  async agentThread(t,thread,except,mailbox,before){return copy([...jobs.entries()].filter(([k,r])=>k.startsWith(t+':')&&r.source.thread_id===thread&&r.source.mailbox===mailbox&&r.id!==except&&(!before||r.source.received_at<=before)).map(([,r])=>r).sort((a,b)=>b.source.received_at.localeCompare(a.source.received_at))[0]);},
   async agentTasks(t,state,offset){return copy([...jobs.entries()].filter(([k,r])=>k.startsWith(t+':')&&(!state||r.state===state)).map(([,r])=>r).sort((a,b)=>b.created_at.localeCompare(a.created_at)||a.id.localeCompare(b.id)).slice(offset,offset+25));},
   async agentEnqueue(t,task){const key=t+':'+task.id,old=jobs.get(key);if(old)return {inserted:false,task:copy(old)};const r={...copy(task),revision:1};jobs.set(key,r);return {inserted:true,task:copy(r)};},
   async memoryLatest(t,k){return copy(memory.get(t+':'+k)?.at(-1));},
@@ -82,7 +82,7 @@ export function createPostgresStateStore(pool){
    const u=await query('UPDATE tcog_agent_config SET payload=$3::jsonb,revision=revision+1 WHERE tenant=$1 AND revision=$2 RETURNING payload,revision',[t,expected,JSON.stringify(data)]);
    if(!u.rows[0])throw Error('Agent revision conflict');return {...u.rows[0].payload,revision:u.rows[0].revision};},
   async agentTask(t,k){return (await query('SELECT payload FROM tcog_agent_jobs WHERE tenant=$1 AND id=$2',[t,k])).rows[0]?.payload;},
-  async agentThread(t,thread,except,mailbox){return (await query("SELECT payload FROM tcog_agent_jobs WHERE tenant=$1 AND payload->'source'->>'thread_id'=$2 AND id<>$3 AND payload->'source'->>'mailbox'=$4 ORDER BY payload->'source'->>'received_at' DESC,id LIMIT 1",[t,thread,except,mailbox])).rows[0]?.payload;},
+  async agentThread(t,thread,except,mailbox,before){return (await query("SELECT payload FROM tcog_agent_jobs WHERE tenant=$1 AND payload->'source'->>'thread_id'=$2 AND id<>$3 AND payload->'source'->>'mailbox'=$4 AND ($5::text IS NULL OR payload->'source'->>'received_at'<=$5) ORDER BY payload->'source'->>'received_at' DESC,id LIMIT 1",[t,thread,except,mailbox,before??null])).rows[0]?.payload;},
   async agentTasks(t,state,offset){return (await query("SELECT payload FROM tcog_agent_jobs WHERE tenant=$1 AND ($2::text IS NULL OR payload->>'state'=$2) ORDER BY created_at DESC,id LIMIT 25 OFFSET $3",[t,state??null,offset])).rows.map(r=>r.payload);},
   async agentEnqueue(t,task){const r=await query('INSERT INTO tcog_agent_jobs(tenant,id,payload) VALUES($1,$2,$3::jsonb) ON CONFLICT DO NOTHING RETURNING payload',[t,task.id,JSON.stringify({...task,revision:1})]);return r.rows[0]?{inserted:true,task:r.rows[0].payload}:{inserted:false,task:await this.agentTask(t,task.id)};},
   async memoryLatest(t,k){const r=await query('SELECT payload,revision,created_at FROM tcog_memory WHERE tenant=$1 AND key_hash=$2 ORDER BY revision DESC LIMIT 1',[t,k]);return memoryRow(r.rows[0],k);},
